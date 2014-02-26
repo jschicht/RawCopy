@@ -1,4 +1,4 @@
-Introduction¶
+Introduction
 This a console application that copy files off NTFS volumes by using low level disk reading method. 
 
 Details
