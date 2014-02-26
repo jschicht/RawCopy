@@ -1,0 +1,17 @@
+RawCopy Changelog
+
+v1.0.0.8: Fixed incorrect version printed.
+
+v1.0.0.7: Fixed bug that caused certain files defined by its name not to be extracted. 
+
+v1.0.0.6: Fixed bug that produced files with just 00's when specifying source file by its IndexNumber?. 
+
+v1.0.0.5: Changed third optional parameter as it was incorrectly named and described. 
+
+v1.0.0.4: Large part of the code base has been updated. Now there is also an option to extract all metafiles too. 
+
+v1.0.0.3: Added ability to specify offset of a given $MFT record. See examples for syntax. 
+
+v1.0.0.2: Added ability to also extract files marked as deleted. 
+
+v1.0.0.1: First version. 
