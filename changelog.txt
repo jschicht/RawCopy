@@ -1,5 +1,7 @@
 RawCopy Changelog
 
+v1.0.0.9: Added support for handling MFT record sizes of 4096 bytes.
+
 v1.0.0.8: Fixed incorrect version printed.
 
 v1.0.0.7: Fixed bug that caused certain files defined by its name not to be extracted. 
