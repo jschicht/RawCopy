@@ -17,10 +17,13 @@ Index number is the best to use, as it will almost certainly garantee a complete
 
 Using file path is not fool proof, because the system may have put locks on the parent folder as well. The way the tool currently works with this method is to first test access to the file. If granted, then proceed with extraction. If access not granted, then access the parent directory and resolve its INDX records (its index entries), then when all its "childrens" index numbers are evaluated a file extraction is performed based on filename name match. Of course if the parent directory also is locked, then this method will fail. But then again you would likely not be able to open the directory for browsing anyway. 
 
-So how do you get the index number of a given file. That can be retrived by using MFTRCRD. See its respective wiki page. It will decode a file or directory's $MFT record, including the index entries for directories. That way, although complicated, one can search into directories such as the "SYSTEM VOLUME INFORMATION". Read off the index numbers under the INDX decode, where directories usually are recognized by a size of 0. Re-run MFTRCRD and specify the index number. 
+So how do you get the index number of a given file. That can be retrived by using eitherr RawDir or MFTRCRD. See its respective wiki page. It will decode a file or directory's $MFT record, including the index entries for directories. That way, although complicated, one can search into directories such as the "SYSTEM VOLUME INFORMATION". Read off the index numbers under the INDX decode, where directories usually are recognized by a size of 0. Re-run MFTRCRD and specify the index number. 
 
 
 Sample usage
+
+Example for copying the pagefile off a running system
+"RawCopy.exe C:\pagefile.sys E:\output" 
 
 Example for copying the SYSTEM hive off a running system
 "RawCopy.exe C:\WINDOWS\system32\config\SYSTEM E:\output" 

@@ -1,10 +1,11 @@
 #RequireAdmin
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
-#AutoIt3Wrapper_UseX64=y
+#AutoIt3Wrapper_Icon=..\..\..\Program Files (x86)\autoit-v3.3.14.2\Icons\au3.ico
+#AutoIt3Wrapper_UseUpx=y
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.10
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.11
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -14,7 +15,6 @@
 #Include <FileConstants.au3>
 ;
 ; https://github.com/jschicht
-; http://code.google.com/p/mft2csv/
 ;
 Global $LockedFileName,$DirArray,$NeedIndx=0, $ResidentIndx, $AttributesArr[18][4], $DoExtractMeta=False, $TargetFileName, $DATA_Name, $FN_FileName, $NameQ[5], $LogicalClusterNumberforthefileMFT, $SectorsPerCluster, $BytesPerSector, $SectorsPerMftRecord, $ClustersPerFileRecordSegment, $MftAttrListString, $SplitMftRecArr[1]
 Global $TargetImageFile, $Entries, $InputFile, $IsShadowCopy=False, $IsPhysicalDrive=False, $IsImage=False, $hDisk, $sBuffer, $ComboPhysicalDrives, $Combo
@@ -56,7 +56,7 @@ Global Const $tagUNICODESTRING = "ushort Length;ushort MaximumLength;ptr Buffer"
 Global Const $tagFILEINTERNALINFORMATION = "int IndexNumber;"
 Global $Timerstart = TimerInit()
 
-ConsoleWrite("RawCopy v1.0.0.10" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.11" & @CRLF & @CRLF)
 _ValidateInput()
 $ParentDir = _GenDirArray($cmdline[1])
 $FN_FileName = $LockedFileName
@@ -115,11 +115,15 @@ If Not $NeedIndx Then
 	_End($Timerstart)
 	Exit
 ElseIf $NeedIndx Then
-	ConsoleWrite("Opening target file failed, now re-trying with INDX method from parent folder" & @CRLF)
-	$IndexNumber = _GetIndexNumber($ParentDir, 1)
-	If @error Then
-		ConsoleWrite("Error: Cannot get IndexNumber of parent folder" & @CRLF)
-		Exit
+	If StringLen($ParentDir) = 2 Or StringRight($ParentDir,1) = ":" Then
+		$IndexNumber = 5
+	Else
+		ConsoleWrite("Opening target file failed, now re-trying with INDX method from parent folder" & @CRLF)
+		$IndexNumber = _GetIndexNumber($ParentDir, 1)
+		If @error Then
+			ConsoleWrite("Error: Cannot get IndexNumber of parent folder: " & $ParentDir & @CRLF)
+			Exit
+		EndIf
 	EndIf
 	$LockedFileName = $DirArray[$DirArray[0]]
 	$NeedExtraction=0
@@ -1071,7 +1075,7 @@ Func _ExtractFile($record)
 		_WinAPI_CloseHandle($hFile)
 		Return
 	Else
-		ConsoleWrite("Error creating output file: " & _WinAPI_GetLastErrorMessage() & @CRLF)
+		ConsoleWrite("Error in CreateFile: " & _WinAPI_GetLastErrorMessage() & @CRLF)
 		;_DisplayInfo("Error creating output file: " & _WinAPI_GetLastErrorMessage() & @CRLF)
 	EndIf
 EndFunc
@@ -1227,7 +1231,7 @@ Func _ExtractResidentFile($Name, $Size, $record)
 		_WinAPI_CloseHandle($hFile)
 		Return
 	Else
-		ConsoleWrite("Error" & @CRLF)
+		ConsoleWrite("Error CreateFile for resident file" & @CRLF)
 	EndIf
 EndFunc
 
