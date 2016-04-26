@@ -1,5 +1,7 @@
 RawCopy Changelog
 
+v1.0.0.12: Fixed bug that caused only one or the other of $INDEX_ROOT/$INDEX_ALLOCATION to be evaluated for content.
+
 v1.0.0.11: Fixed bug in extracting system locked files located in the root of drive.
 
 v1.0.0.10: Fixed bug when $MFT itself contained an $ATTRIBUTE_LIST. Fixed bug with handling records that was split across dataruns. Increased initialization size of array for runs and vcns which caused it to crash with extreme fragmentation.
