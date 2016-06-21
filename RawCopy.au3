@@ -5,7 +5,7 @@
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.12
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.13
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -21,9 +21,10 @@ Global $TargetImageFile, $Entries, $InputFile, $IsShadowCopy=False, $IsPhysicalD
 Global $OutPutPath=@ScriptDir, $InitState = False, $DATA_Clusters, $AttributeOutFileName, $DATA_InitSize, $ImageOffset=0, $ADS_Name, $IndexNumber, $NonResidentFlag, $DATA_RealSize, $DataRun, $DATA_LengthOfAttribute
 Global $TargetDrive = "", $ALInnerCouner, $MFTSize, $TargetOffset, $SectorsPerCluster,$MFT_Record_Size,$BytesPerCluster,$BytesPerSector,$MFT_Offset,$IsDirectory
 Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse, $_COMMON_KERNEL32DLL=DllOpen("kernel32.dll"), $Filetree[1]
-Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$sBuffer,$AttrQ[1]
+Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1],$sBuffer,$AttrQ[1]
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxMFTRefSeqNoArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxMFTParentRefSeqNoArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Global $IRArr[12][2],$IndxArr[20][2]
+Global $VolumesArray[1][3],$DetailMode=1, $WriteFSInfo=0
 Global $DateTimeFormat = 6 ; YYYY-MM-DD HH:MM:SS:MSMSMS:NSNSNSNS = 2007-08-18 08:15:37:733:1234
 Global $tDelta = _WinTime_GetUTCToLocalFileTimeDelta()
 Global Const $RecordSignature = '46494C45' ; FILE signature
@@ -56,10 +57,11 @@ Global Const $tagUNICODESTRING = "ushort Length;ushort MaximumLength;ptr Buffer"
 Global Const $tagFILEINTERNALINFORMATION = "int IndexNumber;"
 Global $Timerstart = TimerInit()
 
-ConsoleWrite("RawCopy v1.0.0.12" & @CRLF & @CRLF)
-_ValidateInput()
-$ParentDir = _GenDirArray($cmdline[1])
+ConsoleWrite("RawCopy v1.0.0.13" & @CRLF & @CRLF)
+_GetInputParams()
+$ParentDir = _GenDirArray($TargetFileName)
 $FN_FileName = $LockedFileName
+Global $MftRefArray[$DirArray[0]+1]
 _ReadBootSector($TargetDrive)
 $BytesPerCluster = $SectorsPerCluster*$BytesPerSector
 
@@ -86,11 +88,12 @@ $MFTSize = $DATA_RealSize
 $MFT_RUN_VCN = $RUN_VCN
 $MFT_RUN_Clusters = $RUN_Clusters
 
-
 If StringIsDigit($IndexNumber) Then
-	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
-	_GenRefArray($IndexNumber)
-	$NewRecord = _FindFileMFTRecord($IndexNumber)
+	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+	_GenRefArray()
+	$RetRec = _FindFileMFTRecord($IndexNumber)
+	If Not IsArray($RetRec) Then Exit
+	$NewRecord = $RetRec[1]
 	_DecodeMFTRecord($NewRecord,1)
 	_DecodeNameQ($NameQ)
 	_MainExtract()
@@ -99,82 +102,66 @@ If StringIsDigit($IndexNumber) Then
 	Exit
 EndIf
 
-$IndexNumber = _GetIndexNumber($TargetFileName, $IsDirectory)
-If Not StringIsDigit($IndexNumber) Or @error Then
-	ConsoleWrite($IndexNumber & @CRLF)
-	$NeedIndx = 1
-EndIf
+_GenRefArray()
 
-If Not $NeedIndx Then
-	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
-	_GenRefArray($IndexNumber)
-	$NewRecord = _FindFileMFTRecord($IndexNumber)
+$NextRef = 5
+$MftRefArray[1]=$NextRef
+$ResolvedPath = $DirArray[1]
+
+For $i = 2 To $DirArray[0]
+	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+	$RetRec = _FindFileMFTRecord($NextRef)
+	If Not IsArray($RetRec) Then Exit
+	$NewRecord = $RetRec[1]
 	_DecodeMFTRecord($NewRecord,1)
-	_MainExtract()
-	ConsoleWrite(@CRLF)
-	_End($Timerstart)
-	Exit
-ElseIf $NeedIndx Then
-	If StringLen($ParentDir) = 2 Or StringRight($ParentDir,1) = ":" Then
-		$IndexNumber = 5
-	Else
-		ConsoleWrite("Opening target file failed, now re-trying with INDX method from parent folder" & @CRLF)
-		$IndexNumber = _GetIndexNumber($ParentDir, 1)
-		If @error Then
-			ConsoleWrite("Error: Cannot get IndexNumber of parent folder: " & $ParentDir & @CRLF)
-			Exit
+;	ConsoleWrite("Parsing INDX records of Mft ref " & $NextRef & " to find " & $DirArray[$i] & @CRLF)
+	$NextRef = _ParseIndex($DirArray[$i])
+	$MftRefArray[$i]=$NextRef
+	If @error Then
+		Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+		$RetRec = _FindFileMFTRecord($MftRefArray[$i-1])
+		If Not IsArray($RetRec) Then Exit
+		$NewRecord = $RetRec[1]
+		_DecodeMFTRecord($NewRecord,1)
+		$LastCheck = _DisplayList($ResolvedPath)
+	ElseIf $i=$DirArray[0] Then
+		Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+		$RetRec = _FindFileMFTRecord($MftRefArray[$i])
+		If Not IsArray($RetRec) Then Exit
+		$NewRecord = $RetRec[1]
+		_DecodeMFTRecord($NewRecord,1)
+		$LastCheck = _DisplayList($ResolvedPath & "\" & $DirArray[$i])
+		If @error Then ; In case last part was a file and not a directory
+			Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+			$RetRec = _FindFileMFTRecord($MftRefArray[$i-1])
+			If Not IsArray($RetRec) Then Exit
+			$NewRecord = $RetRec[1]
+			_DecodeMFTRecord($NewRecord,1)
+			$LastCheck = _DisplayList($ResolvedPath)
 		EndIf
+	ElseIf StringIsDigit($NextRef) Then
+		$ResolvedPath &= "\" & $DirArray[$i]
+		ContinueLoop
+	Else
+		ConsoleWrite("Error: Something went wrong" & @CRLF)
+		ExitLoop
 	EndIf
-	$LockedFileName = $DirArray[$DirArray[0]]
-	$NeedExtraction=0
-EndIf
-$NewRecord = _FindFileMFTRecord($IndexNumber)
-_DecodeMFTRecord($NewRecord,1)
+Next
 
-If $NeedIndx Then
-	If $AttributesArr[10][2] = "TRUE" Then; $INDEX_ALLOCATION
-;		ConsoleWrite("$INDEX_ALLOCATION:" & @CRLF)
-		For $j = 1 To Ubound($IndxFileNameArr)-1
-;			ConsoleWrite("IA: " & $IndxFileNameArr[$j] & @CRLF)
-			If $IndxFileNameArr[$j] = $LockedFileName Then
-				$DATA_Name = $LockedFileName
-				$NeedExtraction = 1
-				$IndexNumber = $IndxMFTReferenceArr[$j]
-				Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
-				_GenRefArray($IndxMFTReferenceArr[$j])
-				$NewRecord = _FindFileMFTRecord($IndxMFTReferenceArr[$j])
-				_DecodeMFTRecord($NewRecord,1)
-				_MainExtract()
-				ConsoleWrite(@CRLF)
-				_End($Timerstart)
-				Exit
-			EndIf
-		Next
-	ElseIf $AttributesArr[9][2] = "TRUE" Then ; $INDEX_ROOT
-;		ConsoleWrite("$INDEX_ROOT:" & @CRLF)
-		For $j = 1 To Ubound($IndxFileNameArr)-1
-;			ConsoleWrite("IR: " & $IndxFileNameArr[$j] & @CRLF)
-			If $IndxFileNameArr[$j] = $LockedFileName Then
-				$DATA_Name = $LockedFileName
-				$NeedExtraction = 1
-				$IndexNumber = $IndxMFTReferenceArr[$j]
-				Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
-				_GenRefArray(Int($IndxMFTReferenceArr[$j],2))
-				$NewRecord = _FindFileMFTRecord(Int($IndxMFTReferenceArr[$j],2))
-				_DecodeMFTRecord($NewRecord,1)
-				_MainExtract()
-				ConsoleWrite(@CRLF)
-				_End($Timerstart)
-				Exit
-			EndIf
-		Next
-	EndIf
-	ConsoleWrite("Error: There was no index found for the parent folder." & @CRLF)
-	Exit
-EndIf
+Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+_GenRefArray()
+$RetRec = _FindFileMFTRecord($NextRef)
+If Not IsArray($RetRec) Then Exit
+$NewRecord = $RetRec[1]
+_DecodeMFTRecord($NewRecord,1)
+_MainExtract()
+ConsoleWrite(@CRLF)
+_End($Timerstart)
 Exit
 
+
 Func _MainExtract()
+	Local $LocalCoreFilename
 	For $i = 1 To UBound($DataQ) - 1
 		_DecodeDataQEntry($DataQ[$i])
 		$AttributeOutFileName = $OutPutPath & "\" & $ADS_Name
@@ -213,8 +200,23 @@ Func _MainExtract()
 	For $i = 1 To UBound($AttribX) - 1
 		$FN_FileName = ""
 		_DecodeDataQEntry($AttribX[$i])
-		$AttributeOutFileName = $OutPutPath & "\" & $PreservedFileName & "_" & $IndexNumber & "_" & _TranslateAttributeType($AttribXType[$i]) & "_" & $AttribXCounter[$i] & ".bin"
-		ConsoleWrite("Writing: " & $PreservedFileName & "_" & $IndexNumber & "_" & _TranslateAttributeType($AttribXType[$i]) & "_" & $AttribXCounter[$i] & ".bin" & @CRLF)
+
+		If $AttribXCounter[$i] > 1 Then
+			If $AttribXStreamName[$i]="" Then
+				$LocalCoreFilename = $PreservedFileName & "_" & $IndexNumber & "_" & _TranslateAttributeType($AttribXType[$i]) & "_" & $AttribXCounter[$i] & ".bin"
+			Else
+				$LocalCoreFilename = $PreservedFileName & "_" & $IndexNumber & "_" & _TranslateAttributeType($AttribXType[$i]) & "_" & $AttribXStreamName[$i] & ".bin"
+			EndIf
+		Else
+			If $AttribXStreamName[$i]="" Then
+				$LocalCoreFilename = $PreservedFileName & "_" & $IndexNumber & "_" & _TranslateAttributeType($AttribXType[$i]) & ".bin"
+			Else
+				$LocalCoreFilename = $PreservedFileName & "_" & $IndexNumber & "_" & _TranslateAttributeType($AttribXType[$i]) & "_" & $AttribXStreamName[$i] & ".bin"
+			EndIf
+		EndIf
+		$AttributeOutFileName = $OutPutPath & "\" & $LocalCoreFilename
+		ConsoleWrite("Writing: " & $LocalCoreFilename & @CRLF)
+
 		If $NonResidentFlag = '00' Then
 			_ExtractResidentFile($AttributeOutFileName, $DATA_LengthOfAttribute, $MFTEntry)
 		Else
@@ -248,7 +250,6 @@ EndFunc
 
 Func _GenDirArray($InPath)
 	Local $Reconstruct
-;	If FileExists($InPath) <> 1 Then Return SetError(1, 0, 0)
 	Global $DirArray = StringSplit($InPath,"\")
 	$LockedFileName = $DirArray[$DirArray[0]]
 	For $i = 1 To $DirArray[0]-1
@@ -307,8 +308,9 @@ Func _GetIndexNumber($file, $mode)
 EndFunc
 
 Func _ExtractSingleFile($MFTReferenceNumber)
-	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]				;clear array
-	$MFTRecord = _FindFileMFTRecord($MFTReferenceNumber)
+	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]				;clear array
+	$TestRecord = _FindFileMFTRecord($MFTReferenceNumber)
+	$MFTRecord = $TestRecord[1]
 	If $MFTRecord = "" Then
 		ConsoleWrite("Target " & $MFTReferenceNumber & " not found" & @CRLF)
 		;_DisplayInfo("Target " & $MFTReferenceNumber & " not found" & @CRLF)
@@ -346,7 +348,7 @@ Func _DecodeAttrList($TargetFile, $AttrList)
 		EndIf
 		$List = ""
 		For $r = 1 To Ubound($RUN_VCN)-1
-			_WinAPI_SetFilePointerEx($hFile, $RUN_VCN[$r]*$BytesPerCluster, $FILE_BEGIN)
+			_WinAPI_SetFilePointerEx($hFile, $ImageOffset+($RUN_VCN[$r]*$BytesPerCluster), $FILE_BEGIN)
 			For $i = 1 To $RUN_Clusters[$r]
 				_WinAPI_ReadFile($hFile, DllStructGetPtr($tBuffer), $BytesPerCluster, $nBytes)
 				$List &= StringTrimLeft(DllStructGetData($tBuffer, 1),2)
@@ -525,7 +527,7 @@ EndFunc
 Func _DecodeMFTRecord($MFTEntry,$MFTMode)
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Local $MFTEntryOrig,$FN_Number,$DATA_Number,$SI_Number,$ATTRIBLIST_Number,$OBJID_Number,$SECURITY_Number,$VOLNAME_Number,$VOLINFO_Number,$INDEXROOT_Number,$INDEXALLOC_Number,$BITMAP_Number,$REPARSEPOINT_Number,$EAINFO_Number,$EA_Number,$PROPERTYSET_Number,$LOGGEDUTILSTREAM_Number
-Local $INDEX_ROOT_ON="FALSE",$INDEX_ALLOCATION_ON="FALSE"
+Local $INDEX_ROOT_ON="FALSE",$INDEX_ALLOCATION_ON="FALSE",$CoreAttribute,$CoreAttributeChunk,$CoreAttributeName
 _SetArrays()
 $HEADER_RecordRealSize = ""
 $HEADER_MFTREcordNumber = ""
@@ -590,6 +592,7 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $SI_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $ATTRIBUTE_LIST
 ;			$ATTRIBUTE_LIST_ON = "TRUE"
@@ -598,13 +601,17 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $ATTRIBLIST_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 			$MFTEntryOrig = $MFTEntry
 			$AttrList = StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2)
 			_DecodeAttrList($HEADER_MFTRecordNumber, $AttrList)		;produces $AttrQ - extra record list
 			$str = ""
 			For $i = 1 To $AttrQ[0]
-				$record = _FindFileMFTRecord($AttrQ[$i])
+				;$record = _FindFileMFTRecord($AttrQ[$i])
+				$RetRec = _FindFileMFTRecord($AttrQ[$i])
+				If Not IsArray($RetRec) Then Exit
+				$record = $RetRec[1]
 				$str &= _StripMftRecord($record)		;no header or end marker
 			Next
 			$str &= "FFFFFFFF"		;add end marker
@@ -616,6 +623,7 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $FN_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 			$attr = StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2)
 			$NameSpace = StringMid($attr,179,2)
@@ -636,14 +644,19 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $OBJID_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $SECURITY_DESCRIPTOR
 ;			$SECURITY_DESCRIPTOR_ON = "TRUE"
 			$SECURITY_Number += 1
+			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+			$CoreAttributeChunk = $CoreAttribute[0]
+			$CoreAttributeName = $CoreAttribute[1]
 			If $MFTMode = 1 Then
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $SECURITY_Number)
+				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $VOLUME_NAME
 ;			$VOLUME_NAME_ON = "TRUE"
@@ -652,6 +665,7 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $VOLNAME_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $VOLUME_INFORMATION
 ;			$VOLUME_INFORMATION_ON = "TRUE"
@@ -660,6 +674,7 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $VOLINFO_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $DATA
 ;			$DATA_ON = "TRUE"
@@ -668,50 +683,66 @@ While 1
 		Case $AttributeType = $INDEX_ROOT
 ;			$INDEX_ROOT_ON = "TRUE"
 			$INDEXROOT_Number += 1
+			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+			$CoreAttributeChunk = $CoreAttribute[0]
+			$CoreAttributeName = $CoreAttribute[1]
 			If $MFTMode = 1 Then
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $INDEXROOT_Number)
+				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 			ReDim $IRArr[12][$INDEXROOT_Number+1]
-			$CoreIndexRoot = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
-			$CoreIndexRootChunk = $CoreIndexRoot[0]
-			$CoreIndexRootName = $CoreIndexRoot[1]
-			If $CoreIndexRootName = "$I30" Then
+;			$CoreIndexRoot = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+;			$CoreIndexRootChunk = $CoreIndexRoot[0]
+;			$CoreIndexRootName = $CoreIndexRoot[1]
+			If $CoreAttributeName = "$I30" Then
 				$INDEX_ROOT_ON = "TRUE"
-				_Get_IndexRoot($CoreIndexRootChunk,$INDEXROOT_Number,$CoreIndexRootName)
+				_Get_IndexRoot($CoreAttributeChunk,$INDEXROOT_Number,$CoreAttributeName)
 			EndIf
 		Case $AttributeType = $INDEX_ALLOCATION
 ;			$INDEX_ALLOCATION_ON = "TRUE"
 			$INDEXALLOC_Number += 1
+			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+			$CoreAttributeChunk = $CoreAttribute[0]
+			$CoreAttributeName = $CoreAttribute[1]
 			If $MFTMode = 1 Then
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $INDEXALLOC_Number)
+				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
-			$CoreIndexAllocation = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
-			$CoreIndexAllocationChunk = $CoreIndexAllocation[0]
-			$CoreIndexAllocationName = $CoreIndexAllocation[1]
+;			$CoreIndexAllocation = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+;			$CoreIndexAllocationChunk = $CoreIndexAllocation[0]
+;			$CoreIndexAllocationName = $CoreIndexAllocation[1]
 ;			_Arrayadd($HexDumpIndxRecord,$CoreIndexAllocationChunk)
-			If $CoreIndexAllocationName = "$I30" Then
+			If $CoreAttributeName = "$I30" Then
 				$INDEX_ALLOCATION_ON = "TRUE"
-				_Get_IndexAllocation($CoreIndexAllocationChunk,$INDEXALLOC_Number,$CoreIndexAllocationName)
+				_Get_IndexAllocation($CoreAttributeChunk,$INDEXALLOC_Number,$CoreAttributeName)
 			EndIf
 		Case $AttributeType = $BITMAP
 ;			$BITMAP_ON = "TRUE"
 			$BITMAP_Number += 1
+			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+			$CoreAttributeChunk = $CoreAttribute[0]
+			$CoreAttributeName = $CoreAttribute[1]
 			If $MFTMode = 1 Then
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $BITMAP_Number)
+				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $REPARSE_POINT
 ;			$REPARSE_POINT_ON = "TRUE"
 			$REPARSEPOINT_Number += 1
+			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+			$CoreAttributeChunk = $CoreAttribute[0]
+			$CoreAttributeName = $CoreAttribute[1]
 			If $MFTMode = 1 Then
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $REPARSEPOINT_Number)
+				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $EA_INFORMATION
 ;			$EA_INFORMATION_ON = "TRUE"
@@ -720,14 +751,19 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $EAINFO_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $EA
 ;			$EA_ON = "TRUE"
 			$EA_Number += 1
+			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+			$CoreAttributeChunk = $CoreAttribute[0]
+			$CoreAttributeName = $CoreAttribute[1]
 			If $MFTMode = 1 Then
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $EA_Number)
+				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $PROPERTY_SET
 ;			$PROPERTY_SET_ON = "TRUE"
@@ -736,14 +772,19 @@ While 1
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $PROPERTYSET_Number)
+				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $LOGGED_UTILITY_STREAM
 ;			$LOGGED_UTILITY_STREAM_ON = "TRUE"
 			$LOGGEDUTILSTREAM_Number += 1
+			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
+			$CoreAttributeChunk = $CoreAttribute[0]
+			$CoreAttributeName = $CoreAttribute[1]
 			If $MFTMode = 1 Then
 				_ArrayAdd($AttribX, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 				_ArrayAdd($AttribXType, $AttributeType)
 				_ArrayAdd($AttribXCounter, $LOGGEDUTILSTREAM_Number)
+				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $ATTRIBUTE_END_MARKER
 			ExitLoop
@@ -871,17 +912,22 @@ Func _FindFileMFTRecord($MftRef)
 		_WinAPI_ReadFile($hFile, DllStructGetPtr($tBuffer), $MFT_Record_Size, $nBytes)
 		$record = DllStructGetData($tBuffer, 1)
 		$TmpOffset = DllCall('kernel32.dll', 'int', 'SetFilePointerEx', 'ptr', $hFile, 'int64', 0, 'int64*', 0, 'dword', 1)
-		ConsoleWrite("Record number: " & $MftRef & " found at disk offset: " & $TmpOffset[3]-$MFT_Record_Size & " -> 0x" & Hex(Int($TmpOffset[3]-$MFT_Record_Size)) & @CRLF)
+		;ConsoleWrite("Record number: " & $MftRef & " found at disk offset: " & $TmpOffset[3]-$MFT_Record_Size & " -> 0x" & Hex(Int($TmpOffset[3]-$MFT_Record_Size)) & @CRLF)
 	EndIf
 
 	If StringMid($record,91,8) = $TargetFile Then
+		$TmpOffset = DllCall('kernel32.dll', 'int', 'SetFilePointerEx', 'ptr', $hFile, 'int64', 0, 'int64*', 0, 'dword', 1)
 		_WinAPI_CloseHandle($hFile)
-		Return $record
+		$FoundOffset = Int($TmpOffset[3])-Int($MFT_Record_Size)
+		$RetVal[0] = $FoundOffset
+		$RetVal[1] = $record
+		Return $RetVal
 	Else
 		ConsoleWrite("Error wrong ref: " & StringMid($record,91,8) & @CRLF)
 		_WinAPI_CloseHandle($hFile)
 		Return ""
 	EndIf
+
 EndFunc
 
 Func _FindMFT($TargetFile)
@@ -986,6 +1032,12 @@ Func _ReadBootSector($TargetDrive)
 	$BytesPerCluster = $BytesPerSector * $SectorsPerCluster
 	$ClustersPerFileRecordSegment = DllStructGetData($tBootSectorSections, "ClustersPerFileRecordSegment")
 	$LogicalClusterNumberforthefileMFT = DllStructGetData($tBootSectorSections, "LogicalClusterNumberforthefileMFT")
+
+	$SectorsPerTrack = DllStructGetData($tBootSectorSections, "SectorsPerTrack")
+	$NumberOfHeads = DllStructGetData($tBootSectorSections, "NumberOfHeads")
+	$TotalSectors = DllStructGetData($tBootSectorSections, "TotalSectors")
+	$LogicalClusterNumberforthefileMFTMirr = DllStructGetData($tBootSectorSections, "LogicalClusterNumberforthefileMFTMirr")
+
 	$MFT_Offset = $BytesPerCluster * $LogicalClusterNumberforthefileMFT
 	If $ClustersPerFileRecordSegment > 127 Then
 		$MFT_Record_Size = 2 ^ (256 - $ClustersPerFileRecordSegment)
@@ -994,6 +1046,18 @@ Func _ReadBootSector($TargetDrive)
 	EndIf
 	$SectorsPerMftRecord = $MFT_Record_Size/$BytesPerSector
 	$ClustersPerFileRecordSegment = Ceiling($MFT_Record_Size/$BytesPerCluster)
+	If $WriteFSInfo Then
+		Local $hFile = FileOpen($OutPutPath & "\VolInfo.txt",2)
+		FileWriteLine($hFile,"BytesPerSector:"&$BytesPerSector)
+		FileWriteLine($hFile,"SectorsPerCluster:"&$SectorsPerCluster)
+		FileWriteLine($hFile,"SectorsPerTrack:"&$SectorsPerTrack)
+		FileWriteLine($hFile,"NumberOfHeads:"&$NumberOfHeads)
+		FileWriteLine($hFile,"TotalSectors:"&$TotalSectors)
+		FileWriteLine($hFile,"LogicalClusterNumberforthefileMFT:"&$LogicalClusterNumberforthefileMFT)
+		FileWriteLine($hFile,"LogicalClusterNumberforthefileMFTMirr:"&$LogicalClusterNumberforthefileMFTMirr)
+		FileWriteLine($hFile,"MFTRecordSize:"&$MFT_Record_Size)
+		FileClose($hFile)
+	EndIf
 EndFunc
 
 Func _HexEncode($bInput)
@@ -1476,7 +1540,7 @@ Func _GetAttributeEntry($Entry)
 ;							Local $nBytes
 							$FileSize = $ATTRIBUTE_HEADER_RealSize
 							For $s = 1 To UBound($RUN_VCN)-1
-								_WinAPI_SetFilePointerEx($hFile, $RUN_VCN[$s]*$BytesPerCluster, $FILE_BEGIN)
+								_WinAPI_SetFilePointerEx($hFile, $ImageOffset+($RUN_VCN[$s]*$BytesPerCluster), $FILE_BEGIN)
 								$g = $RUN_Clusters[$s]
 								While $g > 16 And $FileSize > $BytesPerCluster * 16
 									_WinAPI_ReadFile($hFile, DllStructGetPtr($tBuffer), $BytesPerCluster * 16, $nBytes)
@@ -1558,7 +1622,7 @@ Func _Get_IndexRoot($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 ;	$IRArr[11][$Current_Attrib_Number] = $IRPadding2
 ;	If $ResidentIndx And $AttributeType=$FILE_NAME Then
 	If $AttributeType=$FILE_NAME Then
-		$TheResidentIndexEntry = StringMid($Entry,$LocalAttributeOffset+64)
+		$TheResidentIndexEntry = StringMid($Entry,$LocalAttributeOffset+64,($TotalSizeOfEntries*2)-64)
 		_DecodeIndxEntries($TheResidentIndexEntry,$Current_Attrib_Number,$CurrentAttributeName)
 	EndIf
 EndFunc
@@ -2134,67 +2198,7 @@ Func _WinTime_FormatTime($iYear,$iMonth,$iDay,$iHour,$iMin,$iSec,$iMilSec,$iDayO
 EndFunc
 ; end: by Ascend4nt ----------------------------
 
-Func _ValidateInput()
-;	If @AutoItX64=0 And StringInStr(@OSArch,"64") Then
-;		ConsoleWrite("Error: Running the 32-bit version on 64-bit OS may produce incorrect output. Try the 64-bit version instead." & @CRLF)
-;		Exit
-;	EndIf
-	If $cmdline[0] < 2 Then
-		ConsoleWrite("Usage:" & @CRLF)
-		ConsoleWrite("RawCopy SourceFile DestinationDir -AllAttr" & @CRLF)
-		ConsoleWrite("	SourceFile is the file to backup (mandatory). Can be filename or indexnumber." & @CRLF)
-		ConsoleWrite("	DestinationDir is the output directory (mandatory)" & @CRLF)
-		ConsoleWrite("	The -AllAttr switch is optional and indicates extraction of all attributes, not just $DATA" & @CRLF & @CRLF)
-		ConsoleWrite("Example copying C:\file.ext to E:\out only $DATA attribute:" & @CRLF)
-		ConsoleWrite("RawCopy C:\file.ext E:\out" & @CRLF & @CRLF)
-		ConsoleWrite("Example copying C:\WINDOWS\system32\config\SAM to F:\reg with all attributes including $DATA" & @CRLF)
-		ConsoleWrite("RawCopy C:\WINDOWS\system32\config\SAM F:\reg -AllAttr" & @CRLF & @CRLF)
-		ConsoleWrite("Example copying IndexNumber 20112 from C: volume to D:\bak only $DATA attribute" & @CRLF)
-		ConsoleWrite("RawCopy C:20112 D:\bak" & @CRLF & @CRLF)
-		Exit
-	EndIf
-	If FileExists($cmdline[1]) <> 1 Then
-		If StringMid($cmdline[1],2,1) = ":" Then
-			If StringIsDigit(StringMid($cmdline[1],3)) <> 1 Then
-				ConsoleWrite("Error: File not found in Param1: " & $cmdline[1] & @CRLF)
-				$TargetFileName = $cmdline[1]
-				$TargetDrive = StringMid($cmdline[1],1,2)
-			Else
-				$TargetDrive = StringMid($cmdline[1],1,2)
-				$IndexNumber = StringMid($cmdline[1],3)
-			EndIf
-		Else
-			ConsoleWrite("Error: File probably locked" & @CRLF)
-			Exit
-		EndIf
-	Else
-		$FileAttrib = FileGetAttrib($cmdline[1])
-		If @error Or $FileAttrib="" Then
-			ConsoleWrite("Error: Could not retrieve file attributes" & @CRLF)
-			Exit
-		EndIf
-		If $FileAttrib <> "D" Then
-			$IsDirectory = 0
-		EndIf
-		If $FileAttrib = "D" Then
-			$IsDirectory = 1
-		EndIf
-		$TargetDrive = StringMid($cmdline[1],1,2)
-		$TargetFileName = $cmdline[1]
-	EndIf
-	If FileExists($cmdline[2]) = 0 Then
-		ConsoleWrite("Error: Output directory does not exist. Using current dir." & @CRLF)
-	Else
-		$OutPutPath = $cmdline[2]
-	EndIf
-	if DriveGetFileSystem($TargetDrive) <> "NTFS" then
-		ConsoleWrite("Error: Target volume " & $TargetDrive & " is not NTFS" & @crlf)
-		Exit
-	EndIf
-	If $cmdline[0] > 2 Then
-		If $cmdline[3] = "-AllAttr" Then $DoExtractMeta = True
-	EndIf
-EndFunc
+
 
 Func _DecodeNameQ($NameQ)
 	For $name = 1 To UBound($NameQ) - 1
@@ -2342,7 +2346,7 @@ Func _DecodeAttrList2($FileRef, $AttrList)
    Return $List
 EndFunc
 
-Func _GenRefArray($TargetRef)
+Func _GenRefArray()
 	Local $nBytes, $ParentRef, $FileRef, $BaseRef, $tag, $PrintName, $record, $TmpRecord, $MFTClustersToKeep=0, $DoKeepCluster=0, $Subtr, $PartOfAttrList=0, $ArrSize, $BytesToGet=0
 	Local $rBuffer = DllStructCreate("byte["&$MFT_Record_Size&"]")
 	$ref = -1
@@ -2392,3 +2396,454 @@ Func _GenRefArray($TargetRef)
 	Next
 EndFunc
 
+Func _GetInputParams()
+	Local $TmpAllAttr, $TmpOutPath, $TmpImageFile, $TmpFileNamePath, $TmpImageNtfsVolume, $TmpRawDirMode, $TmpWriteFSInfo
+	For $i = 1 To $cmdline[0]
+		;ConsoleWrite("Param " & $i & ": " & $cmdline[$i] & @CRLF)
+		If StringLeft($cmdline[$i],14) = "/FileNamePath:" Then $TmpFileNamePath = StringMid($cmdline[$i],15)
+		If StringLeft($cmdline[$i],12) = "/OutputPath:" Then $TmpOutPath = StringMid($cmdline[$i],13)
+		If StringLeft($cmdline[$i],9) = "/AllAttr:" Then $TmpAllAttr = StringMid($cmdline[$i],10)
+		If StringLeft($cmdline[$i],11) = "/ImageFile:" Then $TmpImageFile = StringMid($cmdline[$i],12)
+		If StringLeft($cmdline[$i],17) = "/ImageNtfsVolume:" Then $TmpImageNtfsVolume = StringMid($cmdline[$i],18)
+		If StringLeft($cmdline[$i],12) = "/RawDirMode:" Then $TmpRawDirMode = StringMid($cmdline[$i],13)
+		If StringLeft($cmdline[$i],13) = "/WriteFSInfo:" Then $TmpWriteFSInfo = StringMid($cmdline[$i],14)
+	Next
+	If $cmdline[0] = 0 Then
+		_PrintHelp()
+		Exit
+	EndIf
+
+	If StringLen($TmpOutPath) > 0 Then
+		If FileExists($TmpOutPath) Then
+			$OutPutPath = $TmpOutPath
+		Else
+			$OutPutPath = @ScriptDir
+		EndIf
+	EndIf
+
+	If StringLen($TmpAllAttr) > 0 Then
+		If $TmpAllAttr=1 Then
+			$DoExtractMeta = 1
+		Else
+			$DoExtractMeta = 0
+		EndIf
+	EndIf
+
+	If StringLen($TmpRawDirMode) > 0 Then
+		If $TmpRawDirMode<>0 And $TmpRawDirMode<>1 And $TmpRawDirMode<>2 Then
+			ConsoleWrite("Error: RawDirMode must be an integer from 0 - 2" & @CRLF)
+			_PrintHelp()
+			Exit
+		EndIf
+		$DetailMode = $TmpRawDirMode
+	Else
+		$DetailMode = 0
+	EndIf
+
+	If StringLen($TmpImageNtfsVolume) > 0 Then
+		If Not StringIsDigit($TmpImageNtfsVolume) Then
+			ConsoleWrite("Error: ImageNtfsVolume must be a digit starting from 1" & @CRLF)
+			_PrintHelp()
+			Exit
+		EndIf
+	EndIf
+
+	If StringLen($TmpWriteFSInfo) > 0 Then
+		Select
+			Case $TmpWriteFSInfo <> 0 And $TmpWriteFSInfo <> 1
+				ConsoleWrite("Error: WriteFSInfo had unexpected value. Skipping it." & @CRLF)
+				$WriteFSInfo = 0
+			Case $TmpWriteFSInfo = 0
+				$WriteFSInfo = 0
+			Case $TmpWriteFSInfo = 1
+				$WriteFSInfo = 1
+		EndSelect
+	EndIf
+
+	If StringLen($TmpImageFile) > 0 Then
+		If FileExists($TmpImageFile) Then
+			$IsImage=1
+			$TargetImageFile = $TmpImageFile
+			$NtfsCheck = _ProcessImage($TargetImageFile)
+			If Not $NtfsCheck Then
+				ConsoleWrite("Sorry, no NTFS volume found in that file." & @CRLF)
+				$IsImage=0
+				$TargetImageFile = ""
+			Else
+				If $TmpImageNtfsVolume > UBound($VolumesArray)-1 Then
+					ConsoleWrite("Error: NTFS volume " & $TmpImageNtfsVolume & " does not exist in image." & @CRLF)
+					;$TestArr = StringSplit($Entries,"|")
+					;_ArrayDisplay($TestArr,"$TestArr")
+					ConsoleWrite("Found NTFS volumes are:" & @CRLF)
+					For $i = 1 To UBound($VolumesArray)-1
+						ConsoleWrite("Volume " & $i & ", StartOffset " & $VolumesArray[$i][1] & ", Size " & Round(($VolumesArray[$i][2]*512)/1024/1024/1024,2) & "GB" & @CRLF)
+					Next
+					_PrintHelp()
+					Exit
+				EndIf
+				$ImageOffset = $VolumesArray[$TmpImageNtfsVolume][1]
+				$TargetDrive = $TargetImageFile
+				;ConsoleWrite("$Entries: " & $Entries & @CRLF)
+				;_ArrayDisplay($VolumesArray,"$VolumesArray")
+			EndIf
+		Else
+			ConsoleWrite("Error: Image file not found: " & $TmpImageFile & @CRLF)
+			Exit
+			;$TargetImageFile = ""
+		EndIf
+	EndIf
+
+	If StringLen($TmpFileNamePath) > 0 Then
+		If Not $IsImage Then
+			If FileExists($TmpFileNamePath) <> 1 Then
+				If StringMid($TmpFileNamePath,2,1) = ":" Then
+					If StringIsDigit(StringMid($TmpFileNamePath,3)) <> 1 Then
+						ConsoleWrite("Error: File not found in Param1: " & $TmpFileNamePath & @CRLF)
+						$TargetFileName = $TmpFileNamePath
+						$TargetDrive = StringMid($TmpFileNamePath,1,2)
+					Else
+						$TargetDrive = StringMid($TmpFileNamePath,1,2)
+						$IndexNumber = StringMid($TmpFileNamePath,3)
+					EndIf
+				Else
+					ConsoleWrite("Error: File probably locked" & @CRLF)
+					Exit
+				EndIf
+			Else
+				$FileAttrib = FileGetAttrib($TmpFileNamePath)
+				If @error Or $FileAttrib="" Then
+					ConsoleWrite("Error: Could not retrieve file attributes" & @CRLF)
+					Exit
+				EndIf
+				If $FileAttrib <> "D" Then
+					$IsDirectory = 0
+				EndIf
+				If $FileAttrib = "D" Then
+					$IsDirectory = 1
+				EndIf
+				$TargetDrive = StringMid($TmpFileNamePath,1,2)
+				$TargetFileName = $TmpFileNamePath
+			EndIf
+		Else
+			If StringMid($TmpFileNamePath,1,1) = "\" Then $TmpFileNamePath = "x:" & $TmpFileNamePath
+			If StringMid($TmpFileNamePath,2,1) = ":" Then
+				If Not StringIsDigit(StringMid($TmpFileNamePath,3)) Then
+					;ConsoleWrite("Error: File not found in FileNamePath: " & $TmpFileNamePath & @CRLF)
+					$TargetFileName = $TmpFileNamePath
+				Else
+					$IndexNumber = StringMid($TmpFileNamePath,3)
+				EndIf
+				$TargetDrive = $TargetImageFile
+				$TargetFileName = $TmpFileNamePath
+			Else
+				ConsoleWrite("Error: File probably locked" & @CRLF)
+				Exit
+			EndIf
+		EndIf
+	Else
+		ConsoleWrite("Error: FileNamePath param not specified" & @CRLF)
+		Exit
+	EndIf
+
+EndFunc
+
+Func _PrintHelp()
+	ConsoleWrite("Syntax:" & @CRLF)
+	ConsoleWrite("RawCopy /ImageFile:FullPath\ImageFilename /ImageNtfsVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:[0|1]" & @CRLF)
+	ConsoleWrite("Examples:" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:c:\pagefile.sys /OutputPath:e:\temp" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:c:\pagefile.sys /OutputPath:e:\temp /AllAttr:1" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:c:0 /OutputPath:e:\temp" & @CRLF)
+	ConsoleWrite("RawCopy /ImageFile:e:\temp\diskimage.dd /ImageNtfsVolume:2 /FileNamePath:c:2 /OutputPath:e:\out" & @CRLF)
+	ConsoleWrite("RawCopy /ImageFile:e:\temp\partimage.dd /ImageNtfsVolume:1 /FileNamePath:c:\file.ext /OutputPath:e:\out" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:c:\$Extend /RawDirMode:1" & @CRLF)
+	ConsoleWrite('RawCopy /ImageFile:e:\temp\diskimage.dd /ImageNtfsVolume:2 /FileNamePath:"c:\system volume information" /RawDirMode:2 /WriteFSInfo:1' & @CRLF)
+EndFunc
+
+Func _ProcessImage($TargetImageFile)
+	If Not FileExists($TargetImageFile) Then
+		ConsoleWrite("Error: Image file not found: " & $TargetImageFile & @CRLF)
+		Return
+	EndIf
+	$TargetImageFile = "\\.\"&$TargetImageFile
+	;ConsoleWrite("Selected disk image file: " & $TargetImageFile & @CRLF)
+	$Entries = ''
+	_CheckMBR()
+	If $Entries = "" Then
+		Return 0
+	Else
+		Return 1
+	EndIf
+EndFunc   ;==>_ProcessImage
+
+Func _CheckMBR()
+	Local $nbytes, $PartitionNumber, $PartitionEntry,$FilesystemDescriptor
+	Local $StartingSector,$NumberOfSectors
+	Local $hImage = _WinAPI_CreateFile($TargetImageFile,2,2,7)
+	$tBuffer = DllStructCreate("byte[512]")
+	Local $read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)
+	If $read = 0 Then Return ""
+	Local $sector = DllStructGetData($tBuffer, 1)
+	For $PartitionNumber = 0 To 3
+		$PartitionEntry = StringMid($sector,($PartitionNumber*32)+3+892,32)
+		If $PartitionEntry = "00000000000000000000000000000000" Then ExitLoop ; No more entries
+		$FilesystemDescriptor = StringMid($PartitionEntry,9,2)
+		;ConsoleWrite("$FilesystemDescriptor: " & $FilesystemDescriptor & @CRLF)
+		;ReDim $VolumesArray[UBound($VolumesArray)][1+$PartitionNumber]
+		;$VolumesArray[0][$PartitionNumber] = $FilesystemDescriptor
+		$StartingSector = Dec(_SwapEndian(StringMid($PartitionEntry,17,8)),2)
+		$NumberOfSectors = Dec(_SwapEndian(StringMid($PartitionEntry,25,8)),2)
+		If ($FilesystemDescriptor = "EE" and $StartingSector = 1 and $NumberOfSectors = 4294967295) Then ; A typical dummy partition to prevent overwriting of GPT data, also known as "protective MBR"
+			_CheckGPT($hImage)
+		ElseIf $FilesystemDescriptor = "05" Or $FilesystemDescriptor = "0F" Then ;Extended partition
+			_CheckExtendedPartition($StartingSector, $hImage)
+		ElseIf $FilesystemDescriptor = "07" Then ;Marked as NTFS
+			If Not _TestNTFS($hImage, $StartingSector) Then ContinueLoop
+			$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
+		Else
+			#cs
+			ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+			$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
+			$VolumesArray[UBound($VolumesArray)-1][1] = $StartingSector*512
+			$VolumesArray[UBound($VolumesArray)-1][2] = $NumberOfSectors
+			#ce
+		EndIf
+    Next
+	If $Entries = "" Then ;Also check if pure partition image (without mbr)
+		$NtfsVolumeSize = _TestNTFS($hImage, 0)
+		If $NtfsVolumeSize Then $Entries = _GenComboDescription(0,$NtfsVolumeSize)
+	EndIf
+	_WinAPI_CloseHandle($hImage)
+EndFunc   ;==>_CheckMBR
+
+Func _CheckGPT($hImage) ; Assume GPT to be present at sector 1, which is not fool proof
+   ;Actually it is. While LBA1 may not be at sector 1 on the disk, it will always be there in an image.
+	Local $nbytes,$read,$sector,$GPTSignature,$StartLBA,$Processed=0,$FirstLBA,$LastLBA
+	$tBuffer = DllStructCreate("byte[512]")
+	$read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)		;read second sector
+	If $read = 0 Then Return ""
+	$sector = DllStructGetData($tBuffer, 1)
+	$GPTSignature = StringMid($sector,3,16)
+	If $GPTSignature <> "4546492050415254" Then
+		;_DebugOut("Error: Could not find GPT signature:", StringMid($sector,3))
+		ConsoleWrite("Error: Could not find GPT signature: " & _HexEncode(StringMid($sector,3)) & @CRLF)
+		Return
+	EndIf
+	$StartLBA = Dec(_SwapEndian(StringMid($sector,147,16)),2)
+	$PartitionsInArray = Dec(_SwapEndian(StringMid($sector,163,8)),2)
+	$PartitionEntrySize = Dec(_SwapEndian(StringMid($sector,171,8)),2)
+	_WinAPI_SetFilePointerEx($hImage, $StartLBA*512, $FILE_BEGIN)
+	$SizeNeeded = $PartitionsInArray*$PartitionEntrySize ;Set buffer size -> maximum number of partition entries that can fit in the array
+	$tBuffer = DllStructCreate("byte[" & $SizeNeeded & "]")
+	$read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), $SizeNeeded, $nBytes)
+	If $read = 0 Then Return ""
+	$sector = DllStructGetData($tBuffer, 1)
+	Do
+		$FirstLBA = Dec(_SwapEndian(StringMid($sector,67+($Processed*2),16)),2)
+		$LastLBA = Dec(_SwapEndian(StringMid($sector,83+($Processed*2),16)),2)
+		If $FirstLBA = 0 And $LastLBA = 0 Then ExitLoop ; No more entries
+		$Processed += $PartitionEntrySize
+		If Not _TestNTFS($hImage, $FirstLBA) Then
+			#cs
+			ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+			$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
+			$VolumesArray[UBound($VolumesArray)-1][1] = $FirstLBA*512
+			$VolumesArray[UBound($VolumesArray)-1][2] = $LastLBA-$FirstLBA
+			#ce
+			ContinueLoop ;Continue the loop if filesystem not NTFS
+		EndIf
+		$Entries &= _GenComboDescription($FirstLBA,$LastLBA-$FirstLBA)
+	Until $Processed >= $SizeNeeded
+EndFunc   ;==>_CheckGPT
+
+Func _CheckExtendedPartition($StartSector, $hImage)	;Extended partitions can only contain Logical Drives, but can be more than 4
+	Local $nbytes,$read,$sector,$NextEntry=0,$StartingSector,$NumberOfSectors,$PartitionTable,$FilesystemDescriptor
+	$tBuffer = DllStructCreate("byte[512]")
+	While 1
+		_WinAPI_SetFilePointerEx($hImage, ($StartSector + $NextEntry) * 512, $FILE_BEGIN)
+		$read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)
+		If $read = 0 Then Return ""
+		$sector = DllStructGetData($tBuffer, 1)
+		$PartitionTable = StringMid($sector,3+892,64)
+		$FilesystemDescriptor = StringMid($PartitionTable,9,2)
+		$StartingSector = $StartSector+$NextEntry+Dec(_SwapEndian(StringMid($PartitionTable,17,8)),2)
+		$NumberOfSectors = Dec(_SwapEndian(StringMid($PartitionTable,25,8)),2)
+		If $FilesystemDescriptor = "07" Then
+			If Not _TestNTFS($hImage, $StartingSector) Then ContinueLoop
+			$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
+		EndIf
+		If StringMid($PartitionTable,33) = "00000000000000000000000000000000" Then ExitLoop ; No more entries
+		#cs
+		ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+		$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
+		$VolumesArray[UBound($VolumesArray)-1][1] = $StartingSector*512
+		$VolumesArray[UBound($VolumesArray)-1][2] = $NumberOfSectors
+		#ce
+		$NextEntry = Dec(_SwapEndian(StringMid($PartitionTable,49,8)),2)
+	WEnd
+EndFunc   ;==>_CheckExtendedPartition
+
+Func _TestNTFS($hImage, $PartitionStartSector)
+	Local $nbytes, $TotalSectors
+	If $PartitionStartSector <> 0 Then
+		_WinAPI_SetFilePointerEx($hImage, $PartitionStartSector*512, $FILE_BEGIN)
+	Else
+		_WinAPI_CloseHandle($hImage)
+		$hImage = _WinAPI_CreateFile($TargetImageFile,2,2,7)
+	EndIf
+	$tBuffer = DllStructCreate("byte[512]")
+	$read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)
+	If $read = 0 Then Return ""
+	$sector = DllStructGetData($tBuffer, 1)
+	$TestSig = StringMid($sector,9,8)
+	$TotalSectors = Dec(_SwapEndian(StringMid($sector,83,8)),2)
+	If $TestSig = "4E544653" Then
+		ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+		$VolumesArray[UBound($VolumesArray)-1][0] = "NTFS"
+		$VolumesArray[UBound($VolumesArray)-1][1] = $PartitionStartSector*512
+		$VolumesArray[UBound($VolumesArray)-1][2] = $TotalSectors
+		Return $TotalSectors		; Volume is NTFS
+	EndIf
+	;_DebugOut("Could not find NTFS:", $sector)		; Volume is not NTFS
+	;ConsoleWrite("Error: Could not find NTFS: " & _HexEncode($sector) & @CRLF)
+	ConsoleWrite("Error: Could not find NTFS" & @CRLF)
+    Return 0
+EndFunc   ;==>_TestNTFS
+
+Func _GenComboDescription($StartSector,$SectorNumber)
+	Return "Offset = " & $StartSector*512 & ": Volume size = " & Round(($SectorNumber*512)/1024/1024/1024,2) & " GB|"
+EndFunc   ;==>_GenComboDescription
+
+Func _DisplayList($DirListPath)
+;	ConsoleWrite("$DetailMode: " & $DetailMode & @CRLF)
+	If $DetailMode=0 Then
+		If $AttributesArr[10][2] <> "TRUE" And $AttributesArr[9][2] <> "TRUE" Then
+			Return SetError(1)
+		EndIf
+	ElseIf $DetailMode = 1 Then
+		If $AttributesArr[10][2] = "TRUE" Then; $INDEX_ALLOCATION
+			ConsoleWrite(@CRLF & "Directory listing for: " & $DirListPath & @CRLF & @CRLF)
+			For $j = 1 To Ubound($IndxFileNameArr)-1
+				ConsoleWrite("Entry number: " & $IndxEntryNumberArr[$j] & @CRLF)
+				ConsoleWrite("FileName: " & $IndxFileNameArr[$j] & @CRLF)
+				ConsoleWrite("MFT Ref: " & $IndxMFTReferenceArr[$j] & @CRLF)
+				ConsoleWrite("MFT Ref SeqNo: " & $IndxMFTRefSeqNoArr[$j] & @CRLF)
+				ConsoleWrite("Parent MFT Ref: " & $IndxMFTReferenceOfParentArr[$j] & @CRLF)
+				ConsoleWrite("Parent MFT Ref SeqNo: " & $IndxMFTParentRefSeqNoArr[$j] & @CRLF)
+				ConsoleWrite("Flags: " & $IndxFileFlagsArr[$j] & @CRLF)
+				ConsoleWrite("File Create Time: " & $IndxCTimeArr[$j] & @CRLF)
+				ConsoleWrite("File Modified Time: " & $IndxATimeArr[$j] & @CRLF)
+				ConsoleWrite("MFT Entry modified Time: " & $IndxMTimeArr[$j] & @CRLF)
+				ConsoleWrite("File Last Access Time: " & $IndxRTimeArr[$j] & @CRLF)
+				ConsoleWrite("Allocated Size: " & $IndxAllocSizeArr[$j] & @CRLF)
+				ConsoleWrite("Real Size: " & $IndxRealSizeArr[$j] & @CRLF)
+				ConsoleWrite("NameSpace: " & $IndxNameSpaceArr[$j] & @CRLF)
+				ConsoleWrite("IndexFlags: " & $IndxIndexFlagsArr[$j] & @CRLF)
+				ConsoleWrite("SubNodeVCN: " & $IndxSubNodeVCNArr[$j] & @CRLF)
+				ConsoleWrite(@CRLF)
+			Next
+		ElseIf $AttributesArr[9][2] = "TRUE" Then ;And $ResidentIndx Then ; $INDEX_ROOT
+			ConsoleWrite(@CRLF & "Directory listing for: " & $DirListPath & @CRLF & @CRLF)
+			For $j = 1 To Ubound($IndxFileNameArr)-1
+				ConsoleWrite("Entry number: " & $IndxEntryNumberArr[$j] & @CRLF)
+				ConsoleWrite("FileName: " & $IndxFileNameArr[$j] & @CRLF)
+				ConsoleWrite("MFT Ref: " & $IndxMFTReferenceArr[$j] & @CRLF)
+				ConsoleWrite("MFT Ref SeqNo: " & $IndxMFTRefSeqNoArr[$j] & @CRLF)
+				ConsoleWrite("Parent MFT Ref: " & $IndxMFTReferenceOfParentArr[$j] & @CRLF)
+				ConsoleWrite("Parent MFT Ref SeqNo: " & $IndxMFTParentRefSeqNoArr[$j] & @CRLF)
+				ConsoleWrite("Flags: " & $IndxFileFlagsArr[$j] & @CRLF)
+				ConsoleWrite("File Create Time: " & $IndxCTimeArr[$j] & @CRLF)
+				ConsoleWrite("File Modified Time: " & $IndxATimeArr[$j] & @CRLF)
+				ConsoleWrite("MFT Entry modified Time: " & $IndxMTimeArr[$j] & @CRLF)
+				ConsoleWrite("File Last Access Time: " & $IndxRTimeArr[$j] & @CRLF)
+				ConsoleWrite("Allocated Size: " & $IndxAllocSizeArr[$j] & @CRLF)
+				ConsoleWrite("Real Size: " & $IndxRealSizeArr[$j] & @CRLF)
+				ConsoleWrite("NameSpace: " & $IndxNameSpaceArr[$j] & @CRLF)
+				ConsoleWrite("IndexFlags: " & $IndxIndexFlagsArr[$j] & @CRLF)
+				ConsoleWrite("SubNodeVCN: " & $IndxSubNodeVCNArr[$j] & @CRLF)
+				ConsoleWrite(@CRLF)
+			Next
+		Else
+;			ConsoleWrite("Error: There was no index found for the parent folder." & @CRLF)
+			Return SetError(1,0,0)
+		EndIf
+	ElseIf $DetailMode = 2 Then
+		If $AttributesArr[10][2] = "TRUE" Then; $INDEX_ALLOCATION
+			$HighestVal = _ArrayMax($IndxRealSizeArr,1)
+			If @error then
+				ConsoleWrite("Error: Unexpected error when resolving higest value in array: " & @error & @CRLF)
+				Exit
+			EndIf
+			$HighestValLength = StringLen($HighestVal)
+			$RealSizeStr = "RealSize"
+			If StringLen($RealSizeStr) < $HighestValLength Then $RealSizeStr = _AlignString($RealSizeStr,$HighestValLength+2)
+			ConsoleWrite(@CRLF & "Directory listing for: " & $DirListPath & @CRLF & @CRLF)
+			ConsoleWrite("           File Modified Time|   Type|"&$RealSizeStr&"| FileName" & @CRLF)
+			For $j = 1 To Ubound($IndxFileNameArr)-1
+				If StringInStr($IndxFileFlagsArr[$j],"directory") Then
+					$FileType = "<DIR>"
+				Else
+					$FileType = "     "
+				EndIf
+				$AlignedSizeVal = _AlignString($IndxRealSizeArr[$j],$HighestValLength)
+				$TextOut = $IndxATimeArr[$j] & " | " & $FileType & " | " & $AlignedSizeVal & " | " & $IndxFileNameArr[$j]
+				ConsoleWrite($TextOut & @CRLF)
+			Next
+		ElseIf $AttributesArr[9][2] = "TRUE" Then ;And $ResidentIndx Then ; $INDEX_ROOT
+			$HighestVal = _ArrayMax($IndxRealSizeArr,1)
+			If @error then
+				ConsoleWrite("Error: Unexpected error when resolving higest value in array: " & @error & @CRLF)
+				Exit
+			EndIf
+			$HighestValLength = StringLen($HighestVal)
+			$RealSizeStr = "RealSize"
+			If StringLen($RealSizeStr) < $HighestValLength Then $RealSizeStr = _AlignString($RealSizeStr,$HighestValLength+2)
+			ConsoleWrite(@CRLF & "Directory listing for: " & $DirListPath & @CRLF & @CRLF)
+			ConsoleWrite("           File Modified Time|   Type|"&$RealSizeStr&"| FileName" & @CRLF)
+			For $j = 1 To Ubound($IndxFileNameArr)-1
+				If StringInStr($IndxFileFlagsArr[$j],"directory") Then
+					$FileType = "<DIR>"
+				Else
+					$FileType = "     "
+				EndIf
+				$AlignedSizeVal = _AlignString($IndxRealSizeArr[$j],$HighestValLength)
+				$TextOut = $IndxATimeArr[$j] & " | " & $FileType & " | " & $AlignedSizeVal & " | " & $IndxFileNameArr[$j]
+				ConsoleWrite($TextOut & @CRLF)
+			Next
+		Else
+;			ConsoleWrite("Error: There was no index found for the parent folder." & @CRLF)
+			Return SetError(1,0,0)
+		EndIf
+	EndIf
+EndFunc
+
+Func _ParseIndex($TestName)
+	If $AttributesArr[10][2] = "TRUE" Then; $INDEX_ALLOCATION
+		For $j = 1 To Ubound($IndxFileNameArr)-1
+			If $IndxFileNameArr[$j] = $TestName Then
+				Return $IndxMFTReferenceArr[$j]
+			Else
+;				Return SetError(1,0,0)
+			EndIf
+		Next
+	ElseIf $AttributesArr[9][2] = "TRUE" Then ;And $ResidentIndx Then ; $INDEX_ROOT
+		For $j = 1 To Ubound($IndxFileNameArr)-1
+			If $IndxFileNameArr[$j] = $TestName Then
+				Return $IndxMFTReferenceArr[$j]
+			Else
+;				Return SetError(1,0,0)
+			EndIf
+		Next
+	Else
+;		ConsoleWrite("Error: No index found for: " & $TestName & @CRLF)
+		Return SetError(1,0,0)
+	EndIf
+EndFunc
+
+Func _AlignString($input,$length)
+	While 1
+		If StringLen($input)=$length Then ExitLoop
+		$input = " "&$input
+	WEnd
+	Return $input
+EndFunc

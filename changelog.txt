@@ -1,5 +1,7 @@
 RawCopy Changelog
 
+v1.0.0.13: Added support for extracting files off image files. Syntax changes. Changed output filenames to contain attribute stream name instead of attribute number where applicable. Improved accuracy of extraction of files by filename.
+
 v1.0.0.12: Fixed bug that caused only one or the other of $INDEX_ROOT/$INDEX_ALLOCATION to be evaluated for content.
 
 v1.0.0.11: Fixed bug in extracting system locked files located in the root of drive.
