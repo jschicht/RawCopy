@@ -2,10 +2,11 @@
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
 #AutoIt3Wrapper_Icon=..\..\..\Program Files (x86)\autoit-v3.3.14.2\Icons\au3.ico
 #AutoIt3Wrapper_UseUpx=y
+#AutoIt3Wrapper_UseX64=y
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.13
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.14
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -57,7 +58,7 @@ Global Const $tagUNICODESTRING = "ushort Length;ushort MaximumLength;ptr Buffer"
 Global Const $tagFILEINTERNALINFORMATION = "int IndexNumber;"
 Global $Timerstart = TimerInit()
 
-ConsoleWrite("RawCopy v1.0.0.13" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.14" & @CRLF & @CRLF)
 _GetInputParams()
 $ParentDir = _GenDirArray($TargetFileName)
 $FN_FileName = $LockedFileName
@@ -2584,29 +2585,20 @@ Func _CheckMBR()
 	Local $read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)
 	If $read = 0 Then Return ""
 	Local $sector = DllStructGetData($tBuffer, 1)
+	;ConsoleWrite(_HexEncode($sector) & @CRLF)
 	For $PartitionNumber = 0 To 3
 		$PartitionEntry = StringMid($sector,($PartitionNumber*32)+3+892,32)
 		If $PartitionEntry = "00000000000000000000000000000000" Then ExitLoop ; No more entries
 		$FilesystemDescriptor = StringMid($PartitionEntry,9,2)
-		;ConsoleWrite("$FilesystemDescriptor: " & $FilesystemDescriptor & @CRLF)
-		;ReDim $VolumesArray[UBound($VolumesArray)][1+$PartitionNumber]
-		;$VolumesArray[0][$PartitionNumber] = $FilesystemDescriptor
 		$StartingSector = Dec(_SwapEndian(StringMid($PartitionEntry,17,8)),2)
 		$NumberOfSectors = Dec(_SwapEndian(StringMid($PartitionEntry,25,8)),2)
 		If ($FilesystemDescriptor = "EE" and $StartingSector = 1 and $NumberOfSectors = 4294967295) Then ; A typical dummy partition to prevent overwriting of GPT data, also known as "protective MBR"
 			_CheckGPT($hImage)
 		ElseIf $FilesystemDescriptor = "05" Or $FilesystemDescriptor = "0F" Then ;Extended partition
 			_CheckExtendedPartition($StartingSector, $hImage)
-		ElseIf $FilesystemDescriptor = "07" Then ;Marked as NTFS
+		ElseIf $FilesystemDescriptor = "06" Or $FilesystemDescriptor = "07" Then ;Marked as NTFS
 			If Not _TestNTFS($hImage, $StartingSector) Then ContinueLoop
 			$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
-		Else
-			#cs
-			ReDim $VolumesArray[UBound($VolumesArray)+1][3]
-			$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
-			$VolumesArray[UBound($VolumesArray)-1][1] = $StartingSector*512
-			$VolumesArray[UBound($VolumesArray)-1][2] = $NumberOfSectors
-			#ce
 		EndIf
     Next
 	If $Entries = "" Then ;Also check if pure partition image (without mbr)
@@ -2644,12 +2636,6 @@ Func _CheckGPT($hImage) ; Assume GPT to be present at sector 1, which is not foo
 		If $FirstLBA = 0 And $LastLBA = 0 Then ExitLoop ; No more entries
 		$Processed += $PartitionEntrySize
 		If Not _TestNTFS($hImage, $FirstLBA) Then
-			#cs
-			ReDim $VolumesArray[UBound($VolumesArray)+1][3]
-			$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
-			$VolumesArray[UBound($VolumesArray)-1][1] = $FirstLBA*512
-			$VolumesArray[UBound($VolumesArray)-1][2] = $LastLBA-$FirstLBA
-			#ce
 			ContinueLoop ;Continue the loop if filesystem not NTFS
 		EndIf
 		$Entries &= _GenComboDescription($FirstLBA,$LastLBA-$FirstLBA)
@@ -2668,17 +2654,11 @@ Func _CheckExtendedPartition($StartSector, $hImage)	;Extended partitions can onl
 		$FilesystemDescriptor = StringMid($PartitionTable,9,2)
 		$StartingSector = $StartSector+$NextEntry+Dec(_SwapEndian(StringMid($PartitionTable,17,8)),2)
 		$NumberOfSectors = Dec(_SwapEndian(StringMid($PartitionTable,25,8)),2)
-		If $FilesystemDescriptor = "07" Then
+		If $FilesystemDescriptor = "06" Or $FilesystemDescriptor = "07" Then
 			If Not _TestNTFS($hImage, $StartingSector) Then ContinueLoop
 			$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
 		EndIf
 		If StringMid($PartitionTable,33) = "00000000000000000000000000000000" Then ExitLoop ; No more entries
-		#cs
-		ReDim $VolumesArray[UBound($VolumesArray)+1][3]
-		$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
-		$VolumesArray[UBound($VolumesArray)-1][1] = $StartingSector*512
-		$VolumesArray[UBound($VolumesArray)-1][2] = $NumberOfSectors
-		#ce
 		$NextEntry = Dec(_SwapEndian(StringMid($PartitionTable,49,8)),2)
 	WEnd
 EndFunc   ;==>_CheckExtendedPartition
@@ -2715,7 +2695,6 @@ Func _GenComboDescription($StartSector,$SectorNumber)
 EndFunc   ;==>_GenComboDescription
 
 Func _DisplayList($DirListPath)
-;	ConsoleWrite("$DetailMode: " & $DetailMode & @CRLF)
 	If $DetailMode=0 Then
 		If $AttributesArr[10][2] <> "TRUE" And $AttributesArr[9][2] <> "TRUE" Then
 			Return SetError(1)
