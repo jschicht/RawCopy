@@ -1,5 +1,7 @@
 RawCopy Changelog
 
+v1.0.0.15: Added support for specifying device paths as /FileNamePath param. Changed param /ImageNtfsVolume to /ImageVolume.
+
 v1.0.0.14: Added 06 as valid partition type (while still validating for NTFS).
 
 v1.0.0.13: Added support for extracting files off image files. Syntax changes. Changed output filenames to contain attribute stream name instead of attribute number where applicable. Improved accuracy of extraction of files by filename.

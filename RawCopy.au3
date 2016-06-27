@@ -2,11 +2,10 @@
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
 #AutoIt3Wrapper_Icon=..\..\..\Program Files (x86)\autoit-v3.3.14.2\Icons\au3.ico
 #AutoIt3Wrapper_UseUpx=y
-#AutoIt3Wrapper_UseX64=y
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.14
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.15
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -57,16 +56,19 @@ Global Const $tagOBJECTATTRIBUTES = "ulong Length;hwnd RootDirectory;ptr ObjectN
 Global Const $tagUNICODESTRING = "ushort Length;ushort MaximumLength;ptr Buffer"
 Global Const $tagFILEINTERNALINFORMATION = "int IndexNumber;"
 Global $Timerstart = TimerInit()
+$VolumesArray[0][0] = "Type"
+$VolumesArray[0][1] = "ByteOffset"
+$VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.14" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.15" & @CRLF & @CRLF)
 _GetInputParams()
+;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
 $FN_FileName = $LockedFileName
 Global $MftRefArray[$DirArray[0]+1]
 _ReadBootSector($TargetDrive)
 $BytesPerCluster = $SectorsPerCluster*$BytesPerSector
-
-$hDisk = _WinAPI_CreateFile("\\.\" & $TargetDrive,2,2,7)
+$hDisk = _WinAPI_CreateFile($TargetDrive,2,2,7)
 If $hDisk = 0 Then
 	ConsoleWrite("CreateFile: " & _WinAPI_GetLastErrorMessage() & @CRLF)
 	Exit
@@ -340,7 +342,7 @@ Func _DecodeAttrList($TargetFile, $AttrList)
 		Global $RUN_VCN[1], $RUN_Clusters[1]
 		_ExtractDataRuns()
 		$tBuffer = DllStructCreate("byte[" & $BytesPerCluster & "]")
-		$hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive, 2, 6, 6)
+		$hFile = _WinAPI_CreateFile($TargetDrive, 2, 6, 6)
 		If $hFile = 0 Then
 			ConsoleWrite("Error in function CreateFile when trying to locate Attribute List." & @CRLF)
 			;_DisplayInfo("Error in function CreateFile when trying to locate Attribute List." & @CRLF)
@@ -856,7 +858,7 @@ Func _FindFileMFTRecord($MftRef)
 	$TargetFile = _DecToLittleEndian($MftRef)
 	$TargetFileDec = Dec(_SwapEndian($TargetFile),2)
 	$tBuffer = DllStructCreate("byte[" & $MFT_Record_Size & "]")
-	$hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive, 2, 6, 6)
+	$hFile = _WinAPI_CreateFile($TargetDrive, 2, 6, 6)
 	If $hFile = 0 Then
 		ConsoleWrite("Error in function CreateFile: " & _WinAPI_GetLastErrorMessage() & @CRLF)
 		_WinAPI_CloseHandle($hFile)
@@ -934,7 +936,7 @@ EndFunc
 Func _FindMFT($TargetFile)
 	Local $nBytes;, $MFT_Record_Size=1024
 	$tBuffer = DllStructCreate("byte[" & $MFT_Record_Size & "]")
-	$hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive, 2, 2, 7)
+	$hFile = _WinAPI_CreateFile($TargetDrive, 2, 2, 7)
 	If $hFile = 0 Then
 		ConsoleWrite("Error in function CreateFile when trying to locate MFT: " & _WinAPI_GetLastErrorMessage() & @CRLF)
 		;_DisplayInfo("Error in function CreateFile when trying to locate MFT: " & _WinAPI_GetLastErrorMessage() & @CRLF)
@@ -990,16 +992,16 @@ EndFunc
 Func _ReadBootSector($TargetDrive)
 	Local $nbytes
 	$tBuffer=DllStructCreate("byte[512]")
-	$hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive,2,2,7)
+	$hFile = _WinAPI_CreateFile($TargetDrive,2,2,7)
 	If $hFile = 0 then
-		ConsoleWrite("Error in function CreateFile: " & _WinAPI_GetLastErrorMessage() & " for: " & "\\.\" & $TargetDrive & @crlf)
+		ConsoleWrite("Error in function CreateFile: " & _WinAPI_GetLastErrorMessage() & " for: " & $TargetDrive & @crlf)
 		;_DisplayInfo("Error in function CreateFile: " & _WinAPI_GetLastErrorMessage() & " for: " & "\\.\" & $TargetDrive & @crlf)
 		Return SetError(1,0,0)
 	EndIf
 	_WinAPI_SetFilePointerEx($hFile, $ImageOffset, $FILE_BEGIN)
 	$read = _WinAPI_ReadFile($hFile, DllStructGetPtr($tBuffer), 512, $nBytes)
 	If $read = 0 then
-		ConsoleWrite("Error in function ReadFile: " & _WinAPI_GetLastErrorMessage() & " for: " & "\\.\" & $TargetDrive & @crlf)
+		ConsoleWrite("Error in function ReadFile: " & _WinAPI_GetLastErrorMessage() & " for: " & $TargetDrive & @crlf)
 		;_DisplayInfo("Error in function ReadFile: " & _WinAPI_GetLastErrorMessage() & " for: " & "\\.\" & $TargetDrive & @crlf)
 		Return
 	EndIf
@@ -1523,7 +1525,7 @@ Func _GetAttributeEntry($Entry)
 ;				ConsoleWrite(_ArrayToString($RUN_Clusters) & @CRLF)
 ;ExtractFile
 				Local $nBytes
-				$hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive, 2, 6, 6)
+				$hFile = _WinAPI_CreateFile($TargetDrive, 2, 6, 6)
 				If $hFile = 0 Then
 					ConsoleWrite("Error in function _WinAPI_CreateFile when trying to open target drive." & @CRLF)
 					_WinAPI_CloseHandle($hFile)
@@ -2398,14 +2400,14 @@ Func _GenRefArray()
 EndFunc
 
 Func _GetInputParams()
-	Local $TmpAllAttr, $TmpOutPath, $TmpImageFile, $TmpFileNamePath, $TmpImageNtfsVolume, $TmpRawDirMode, $TmpWriteFSInfo
+	Local $TmpAllAttr, $TmpOutPath, $TmpImageFile, $TmpFileNamePath, $TmpImageVolume, $TmpRawDirMode, $TmpWriteFSInfo, $str1,$str2,$pos,$matchstr
 	For $i = 1 To $cmdline[0]
 		;ConsoleWrite("Param " & $i & ": " & $cmdline[$i] & @CRLF)
 		If StringLeft($cmdline[$i],14) = "/FileNamePath:" Then $TmpFileNamePath = StringMid($cmdline[$i],15)
 		If StringLeft($cmdline[$i],12) = "/OutputPath:" Then $TmpOutPath = StringMid($cmdline[$i],13)
 		If StringLeft($cmdline[$i],9) = "/AllAttr:" Then $TmpAllAttr = StringMid($cmdline[$i],10)
 		If StringLeft($cmdline[$i],11) = "/ImageFile:" Then $TmpImageFile = StringMid($cmdline[$i],12)
-		If StringLeft($cmdline[$i],17) = "/ImageNtfsVolume:" Then $TmpImageNtfsVolume = StringMid($cmdline[$i],18)
+		If StringLeft($cmdline[$i],13) = "/ImageVolume:" Then $TmpImageVolume = StringMid($cmdline[$i],14)
 		If StringLeft($cmdline[$i],12) = "/RawDirMode:" Then $TmpRawDirMode = StringMid($cmdline[$i],13)
 		If StringLeft($cmdline[$i],13) = "/WriteFSInfo:" Then $TmpWriteFSInfo = StringMid($cmdline[$i],14)
 	Next
@@ -2441,8 +2443,8 @@ Func _GetInputParams()
 		$DetailMode = 0
 	EndIf
 
-	If StringLen($TmpImageNtfsVolume) > 0 Then
-		If Not StringIsDigit($TmpImageNtfsVolume) Then
+	If StringLen($TmpImageVolume) > 0 Then
+		If Not StringIsDigit($TmpImageVolume) Then
 			ConsoleWrite("Error: ImageNtfsVolume must be a digit starting from 1" & @CRLF)
 			_PrintHelp()
 			Exit
@@ -2471,18 +2473,16 @@ Func _GetInputParams()
 				$IsImage=0
 				$TargetImageFile = ""
 			Else
-				If $TmpImageNtfsVolume > UBound($VolumesArray)-1 Then
-					ConsoleWrite("Error: NTFS volume " & $TmpImageNtfsVolume & " does not exist in image." & @CRLF)
-					;$TestArr = StringSplit($Entries,"|")
-					;_ArrayDisplay($TestArr,"$TestArr")
-					ConsoleWrite("Found NTFS volumes are:" & @CRLF)
+				If $TmpImageVolume > UBound($VolumesArray)-1 Then
+					ConsoleWrite("Error: Volume " & $TmpImageVolume & " does not exist in image." & @CRLF)
+					ConsoleWrite("Found volumes are:" & @CRLF)
 					For $i = 1 To UBound($VolumesArray)-1
 						ConsoleWrite("Volume " & $i & ", StartOffset " & $VolumesArray[$i][1] & ", Size " & Round(($VolumesArray[$i][2]*512)/1024/1024/1024,2) & "GB" & @CRLF)
 					Next
 					_PrintHelp()
 					Exit
 				EndIf
-				$ImageOffset = $VolumesArray[$TmpImageNtfsVolume][1]
+				$ImageOffset = $VolumesArray[$TmpImageVolume][1]
 				$TargetDrive = $TargetImageFile
 				;ConsoleWrite("$Entries: " & $Entries & @CRLF)
 				;_ArrayDisplay($VolumesArray,"$VolumesArray")
@@ -2490,56 +2490,151 @@ Func _GetInputParams()
 		Else
 			ConsoleWrite("Error: Image file not found: " & $TmpImageFile & @CRLF)
 			Exit
-			;$TargetImageFile = ""
 		EndIf
 	EndIf
 
 	If StringLen($TmpFileNamePath) > 0 Then
-		If Not $IsImage Then
-			If FileExists($TmpFileNamePath) <> 1 Then
-				If StringMid($TmpFileNamePath,2,1) = ":" Then
-					If StringIsDigit(StringMid($TmpFileNamePath,3)) <> 1 Then
-						ConsoleWrite("Error: File not found in Param1: " & $TmpFileNamePath & @CRLF)
-						$TargetFileName = $TmpFileNamePath
-						$TargetDrive = StringMid($TmpFileNamePath,1,2)
+		If StringInStr($TmpFileNamePath,"Harddisk") And StringInStr($TmpFileNamePath,"Partition") And StringInStr($TmpFileNamePath,":") And (StringInStr($TmpFileNamePath,"Harddisk") < StringInStr($TmpFileNamePath,":")) And (StringInStr($TmpFileNamePath,"Partition") < StringInStr($TmpFileNamePath,":")) Then
+			$str1 = $TmpFileNamePath
+			$matchstr = "Harddisk"
+			$pos = StringInStr($str1,$matchstr)
+			$str2 = StringMid($str1,$pos+StringLen($matchstr),1)
+			If Not StringIsDigit($str2) Then
+				$IsPhysicalDrive=False
+			Else
+				$IsPhysicalDrive=True
+			EndIf
+			;
+			$str1 = $TmpFileNamePath
+			$matchstr = "Partition"
+			$pos = StringInStr($str1,$matchstr)
+			$str2 = StringMid($str1,$pos+StringLen($matchstr),1)
+			If Not StringIsDigit($str2) Then
+				$IsPhysicalDrive=False
+			Else
+				$IsPhysicalDrive=True
+			EndIf
+		EndIf
+		If StringInStr($TmpFileNamePath,"PhysicalDrive") And StringInStr($TmpFileNamePath,":") And (StringInStr($TmpFileNamePath,"PhysicalDrive") < StringInStr($TmpFileNamePath,":")) Then
+			$str1 = $TmpFileNamePath
+			$matchstr = "PhysicalDrive"
+			$pos = StringInStr($str1,$matchstr)
+			$str2 = StringMid($str1,$pos+StringLen($matchstr),1)
+			If Not StringIsDigit($str2) Then
+				$IsPhysicalDrive=False
+			Else
+				$IsPhysicalDrive=True
+			EndIf
+			;
+			$TargetImageFile = $TmpFileNamePath
+			$pos = StringInStr($TmpFileNamePath,":")
+			$TargetDrive = StringMid($TmpFileNamePath,1,StringLen($TmpFileNamePath)-(StringLen($TmpFileNamePath)-$pos+1))
+			$NtfsCheck = _ProcessImage($TargetDrive)
+			If Not $NtfsCheck Then
+				ConsoleWrite("Sorry, no NTFS volume found in that file." & @CRLF)
+				$IsImage=0
+				$TargetImageFile = ""
+			Else
+				If $TmpImageVolume > UBound($VolumesArray)-1 Then
+					ConsoleWrite("Error: Volume " & $TmpImageVolume & " does not exist in image." & @CRLF)
+					ConsoleWrite("Found volumes are:" & @CRLF)
+					For $i = 1 To UBound($VolumesArray)-1
+						ConsoleWrite("Volume " & $i & ", StartOffset " & $VolumesArray[$i][1] & ", Size " & Round(($VolumesArray[$i][2]*512)/1024/1024/1024,2) & "GB" & @CRLF)
+					Next
+					_PrintHelp()
+					Exit
+				EndIf
+				$ImageOffset = $VolumesArray[$TmpImageVolume][1]
+				$TargetDrive = $TargetImageFile
+				;ConsoleWrite("$Entries: " & $Entries & @CRLF)
+				;_ArrayDisplay($VolumesArray,"$VolumesArray")
+			EndIf
+		EndIf
+		If StringInStr($TmpFileNamePath,"HarddiskVolume") And StringInStr($TmpFileNamePath,":") And (StringInStr($TmpFileNamePath,"HarddiskVolume") < StringInStr($TmpFileNamePath,":")) Then
+			$str1 = $TmpFileNamePath
+			$matchstr = "HarddiskVolume"
+			$pos = StringInStr($str1,$matchstr)
+			$str2 = StringMid($str1,$pos+StringLen($matchstr),1)
+			If Not StringIsDigit($str2) Then
+				$IsPhysicalDrive=False
+			Else
+				$IsPhysicalDrive=True
+			EndIf
+		EndIf
+		If StringInStr($TmpFileNamePath,"HarddiskVolumeShadowCopy") And StringInStr($TmpFileNamePath,":") And (StringInStr($TmpFileNamePath,"HarddiskVolumeShadowCopy") < StringInStr($TmpFileNamePath,":")) Then
+			$str1 = $TmpFileNamePath
+			$matchstr = "HarddiskVolumeShadowCopy"
+			$pos = StringInStr($str1,$matchstr)
+			$str2 = StringMid($str1,$pos+StringLen($matchstr),1)
+			If Not StringIsDigit($str2) Then
+				$IsPhysicalDrive=False
+			Else
+				$IsPhysicalDrive=True
+			EndIf
+		EndIf
+		If $IsPhysicalDrive Then
+			$pos = StringInStr($TmpFileNamePath,":")
+			$str2 = StringMid($TmpFileNamePath,$pos+1)
+			If Not StringIsDigit($str2) Then
+				$TargetFileName = StringMid($TmpFileNamePath,$pos+1)
+				$TargetDrive = StringMid($TmpFileNamePath,1,StringLen($TmpFileNamePath)-(StringLen($TmpFileNamePath)-$pos+1))
+				$IsPhysicalDrive=True
+			Else
+				$TargetDrive = StringMid($TmpFileNamePath,1,StringLen($TmpFileNamePath)-(StringLen($TmpFileNamePath)-$pos+1))
+				$IndexNumber = $str2
+				$IsPhysicalDrive=True
+			EndIf
+		EndIf
+		If Not $IsPhysicalDrive Then
+			If Not $IsImage Then
+				If FileExists($TmpFileNamePath) <> 1 Then
+					If StringMid($TmpFileNamePath,2,1) = ":" Then
+						If StringIsDigit(StringMid($TmpFileNamePath,3)) <> 1 Then
+							ConsoleWrite("Error: File not found in Param1: " & $TmpFileNamePath & @CRLF)
+							$TargetFileName = $TmpFileNamePath
+							$TargetDrive = StringMid($TmpFileNamePath,1,2)
+						Else
+							$TargetDrive = StringMid($TmpFileNamePath,1,2)
+							$IndexNumber = StringMid($TmpFileNamePath,3)
+						EndIf
 					Else
-						$TargetDrive = StringMid($TmpFileNamePath,1,2)
+						ConsoleWrite("Error: File probably locked" & @CRLF)
+						Exit
+					EndIf
+				Else
+					$FileAttrib = FileGetAttrib($TmpFileNamePath)
+					If @error Or $FileAttrib="" Then
+						ConsoleWrite("Error: Could not retrieve file attributes" & @CRLF)
+						Exit
+					EndIf
+					If $FileAttrib <> "D" Then
+						$IsDirectory = 0
+					EndIf
+					If $FileAttrib = "D" Then
+						$IsDirectory = 1
+					EndIf
+					$TargetDrive = StringMid($TmpFileNamePath,1,2)
+					$TargetFileName = $TmpFileNamePath
+				EndIf
+			Else
+				If StringMid($TmpFileNamePath,1,1) = "\" Then $TmpFileNamePath = "x:" & $TmpFileNamePath
+				If StringMid($TmpFileNamePath,2,1) = ":" Then
+					If Not StringIsDigit(StringMid($TmpFileNamePath,3)) Then
+						;ConsoleWrite("Error: File not found in FileNamePath: " & $TmpFileNamePath & @CRLF)
+						$TargetFileName = $TmpFileNamePath
+					Else
 						$IndexNumber = StringMid($TmpFileNamePath,3)
 					EndIf
+					$TargetDrive = $TargetImageFile
+					$TargetFileName = $TmpFileNamePath
 				Else
 					ConsoleWrite("Error: File probably locked" & @CRLF)
 					Exit
 				EndIf
-			Else
-				$FileAttrib = FileGetAttrib($TmpFileNamePath)
-				If @error Or $FileAttrib="" Then
-					ConsoleWrite("Error: Could not retrieve file attributes" & @CRLF)
-					Exit
-				EndIf
-				If $FileAttrib <> "D" Then
-					$IsDirectory = 0
-				EndIf
-				If $FileAttrib = "D" Then
-					$IsDirectory = 1
-				EndIf
-				$TargetDrive = StringMid($TmpFileNamePath,1,2)
-				$TargetFileName = $TmpFileNamePath
 			EndIf
-		Else
-			If StringMid($TmpFileNamePath,1,1) = "\" Then $TmpFileNamePath = "x:" & $TmpFileNamePath
-			If StringMid($TmpFileNamePath,2,1) = ":" Then
-				If Not StringIsDigit(StringMid($TmpFileNamePath,3)) Then
-					;ConsoleWrite("Error: File not found in FileNamePath: " & $TmpFileNamePath & @CRLF)
-					$TargetFileName = $TmpFileNamePath
-				Else
-					$IndexNumber = StringMid($TmpFileNamePath,3)
-				EndIf
-				$TargetDrive = $TargetImageFile
-				$TargetFileName = $TmpFileNamePath
-			Else
-				ConsoleWrite("Error: File probably locked" & @CRLF)
-				Exit
-			EndIf
+		EndIf
+		If StringMid($TargetDrive,1,4) <> "\\.\" Then
+			$TargetDrive = "\\.\" & $TargetDrive
 		EndIf
 	Else
 		ConsoleWrite("Error: FileNamePath param not specified" & @CRLF)
@@ -2550,26 +2645,32 @@ EndFunc
 
 Func _PrintHelp()
 	ConsoleWrite("Syntax:" & @CRLF)
-	ConsoleWrite("RawCopy /ImageFile:FullPath\ImageFilename /ImageNtfsVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:[0|1]" & @CRLF)
+	ConsoleWrite("RawCopy /ImageFile:FullPath\ImageFilename /ImageVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:[0|1]" & @CRLF)
 	ConsoleWrite("Examples:" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:c:\pagefile.sys /OutputPath:e:\temp" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:c:\pagefile.sys /OutputPath:e:\temp /AllAttr:1" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:c:0 /OutputPath:e:\temp" & @CRLF)
-	ConsoleWrite("RawCopy /ImageFile:e:\temp\diskimage.dd /ImageNtfsVolume:2 /FileNamePath:c:2 /OutputPath:e:\out" & @CRLF)
-	ConsoleWrite("RawCopy /ImageFile:e:\temp\partimage.dd /ImageNtfsVolume:1 /FileNamePath:c:\file.ext /OutputPath:e:\out" & @CRLF)
+	ConsoleWrite("RawCopy /ImageFile:e:\temp\diskimage.dd /ImageVolume:2 /FileNamePath:c:2 /OutputPath:e:\out" & @CRLF)
+	ConsoleWrite("RawCopy /ImageFile:e:\temp\partimage.dd /ImageVolume:1 /FileNamePath:c:\file.ext /OutputPath:e:\out" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:c:\$Extend /RawDirMode:1" & @CRLF)
-	ConsoleWrite('RawCopy /ImageFile:e:\temp\diskimage.dd /ImageNtfsVolume:2 /FileNamePath:"c:\system volume information" /RawDirMode:2 /WriteFSInfo:1' & @CRLF)
+	ConsoleWrite('RawCopy /ImageFile:e:\temp\diskimage.dd /ImageVolume:2 /FileNamePath:"c:\system volume information" /RawDirMode:2 /WriteFSInfo:1' & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:\\.\HarddiskVolumeShadowCopy1:x:\ /RawDirMode:1" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:\\.\Harddisk0Partition2:0 /OutputPath:e:\out" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:\\.\PhysicalDrive0:0 /ImageVolume:2 /OutputPath:e:\out" & @CRLF)
 EndFunc
 
 Func _ProcessImage($TargetImageFile)
-	If Not FileExists($TargetImageFile) Then
-		ConsoleWrite("Error: Image file not found: " & $TargetImageFile & @CRLF)
-		Return
+	If Not $IsPhysicalDrive Then
+		If Not FileExists($TargetImageFile) Then
+			ConsoleWrite("Error: Image file not found: " & $TargetImageFile & @CRLF)
+			Return
+		EndIf
 	EndIf
-	$TargetImageFile = "\\.\"&$TargetImageFile
-	;ConsoleWrite("Selected disk image file: " & $TargetImageFile & @CRLF)
+	If StringMid($TargetImageFile,1,4) <> "\\.\" Then
+		$TargetImageFile = "\\.\" & $TargetImageFile
+	EndIf
 	$Entries = ''
-	_CheckMBR()
+	_CheckMBR($TargetImageFile)
 	If $Entries = "" Then
 		Return 0
 	Else
@@ -2577,10 +2678,11 @@ Func _ProcessImage($TargetImageFile)
 	EndIf
 EndFunc   ;==>_ProcessImage
 
-Func _CheckMBR()
+Func _CheckMBR($TargetImageFile)
 	Local $nbytes, $PartitionNumber, $PartitionEntry,$FilesystemDescriptor
 	Local $StartingSector,$NumberOfSectors
-	Local $hImage = _WinAPI_CreateFile($TargetImageFile,2,2,7)
+	;Local $hImage = _WinAPI_CreateFile($TargetImageFile,2,2,2)
+	Local $hImage = _WinAPI_CreateFileEx($TargetImageFile, $OPEN_EXISTING, $GENERIC_ALL, BitOR($FILE_SHARE_READ,$FILE_SHARE_WRITE),$FILE_ATTRIBUTE_NORMAL)
 	$tBuffer = DllStructCreate("byte[512]")
 	Local $read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)
 	If $read = 0 Then Return ""
@@ -2596,9 +2698,16 @@ Func _CheckMBR()
 			_CheckGPT($hImage)
 		ElseIf $FilesystemDescriptor = "05" Or $FilesystemDescriptor = "0F" Then ;Extended partition
 			_CheckExtendedPartition($StartingSector, $hImage)
-		ElseIf $FilesystemDescriptor = "06" Or $FilesystemDescriptor = "07" Then ;Marked as NTFS
-			If Not _TestNTFS($hImage, $StartingSector) Then ContinueLoop
-			$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
+		Else
+			If Not _TestNTFS($hImage, $StartingSector) Then
+				ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+				$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
+				$VolumesArray[UBound($VolumesArray)-1][1] = $StartingSector
+				$VolumesArray[UBound($VolumesArray)-1][2] = $NumberOfSectors
+				ContinueLoop
+			Else
+				$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
+			EndIf
 		EndIf
     Next
 	If $Entries = "" Then ;Also check if pure partition image (without mbr)
@@ -2610,6 +2719,7 @@ EndFunc   ;==>_CheckMBR
 
 Func _CheckGPT($hImage) ; Assume GPT to be present at sector 1, which is not fool proof
    ;Actually it is. While LBA1 may not be at sector 1 on the disk, it will always be there in an image.
+   ;ConsoleWrite("_CheckGPT()" & @CRLF)
 	Local $nbytes,$read,$sector,$GPTSignature,$StartLBA,$Processed=0,$FirstLBA,$LastLBA
 	$tBuffer = DllStructCreate("byte[512]")
 	$read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)		;read second sector
@@ -2617,7 +2727,6 @@ Func _CheckGPT($hImage) ; Assume GPT to be present at sector 1, which is not foo
 	$sector = DllStructGetData($tBuffer, 1)
 	$GPTSignature = StringMid($sector,3,16)
 	If $GPTSignature <> "4546492050415254" Then
-		;_DebugOut("Error: Could not find GPT signature:", StringMid($sector,3))
 		ConsoleWrite("Error: Could not find GPT signature: " & _HexEncode(StringMid($sector,3)) & @CRLF)
 		Return
 	EndIf
@@ -2635,10 +2744,21 @@ Func _CheckGPT($hImage) ; Assume GPT to be present at sector 1, which is not foo
 		$LastLBA = Dec(_SwapEndian(StringMid($sector,83+($Processed*2),16)),2)
 		If $FirstLBA = 0 And $LastLBA = 0 Then ExitLoop ; No more entries
 		$Processed += $PartitionEntrySize
+		#cs
 		If Not _TestNTFS($hImage, $FirstLBA) Then
 			ContinueLoop ;Continue the loop if filesystem not NTFS
 		EndIf
 		$Entries &= _GenComboDescription($FirstLBA,$LastLBA-$FirstLBA)
+		#ce
+		If Not _TestNTFS($hImage, $FirstLBA) Then
+			ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+			$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
+			$VolumesArray[UBound($VolumesArray)-1][1] = $FirstLBA
+			$VolumesArray[UBound($VolumesArray)-1][2] = $LastLBA-$FirstLBA
+			ContinueLoop
+		Else
+			$Entries &= _GenComboDescription($FirstLBA,$LastLBA-$FirstLBA)
+		EndIf
 	Until $Processed >= $SizeNeeded
 EndFunc   ;==>_CheckGPT
 
@@ -2650,13 +2770,25 @@ Func _CheckExtendedPartition($StartSector, $hImage)	;Extended partitions can onl
 		$read = _WinAPI_ReadFile($hImage, DllStructGetPtr($tBuffer), 512, $nBytes)
 		If $read = 0 Then Return ""
 		$sector = DllStructGetData($tBuffer, 1)
+		;ConsoleWrite(_HexEncode($sector) & @CRLF)
 		$PartitionTable = StringMid($sector,3+892,64)
 		$FilesystemDescriptor = StringMid($PartitionTable,9,2)
 		$StartingSector = $StartSector+$NextEntry+Dec(_SwapEndian(StringMid($PartitionTable,17,8)),2)
 		$NumberOfSectors = Dec(_SwapEndian(StringMid($PartitionTable,25,8)),2)
 		If $FilesystemDescriptor = "06" Or $FilesystemDescriptor = "07" Then
-			If Not _TestNTFS($hImage, $StartingSector) Then ContinueLoop
-			$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
+			If Not _TestNTFS($hImage, $StartingSector) Then
+				ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+				$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
+				$VolumesArray[UBound($VolumesArray)-1][1] = $StartingSector
+				$VolumesArray[UBound($VolumesArray)-1][2] = $NumberOfSectors
+			Else
+				$Entries &= _GenComboDescription($StartingSector,$NumberOfSectors)
+			EndIf
+		ElseIf $FilesystemDescriptor <> "05" And $FilesystemDescriptor <> "0F" Then
+			ReDim $VolumesArray[UBound($VolumesArray)+1][3]
+			$VolumesArray[UBound($VolumesArray)-1][0] = "Non-NTFS"
+			$VolumesArray[UBound($VolumesArray)-1][1] = $StartingSector
+			$VolumesArray[UBound($VolumesArray)-1][2] = $NumberOfSectors
 		EndIf
 		If StringMid($PartitionTable,33) = "00000000000000000000000000000000" Then ExitLoop ; No more entries
 		$NextEntry = Dec(_SwapEndian(StringMid($PartitionTable,49,8)),2)
@@ -2684,9 +2816,7 @@ Func _TestNTFS($hImage, $PartitionStartSector)
 		$VolumesArray[UBound($VolumesArray)-1][2] = $TotalSectors
 		Return $TotalSectors		; Volume is NTFS
 	EndIf
-	;_DebugOut("Could not find NTFS:", $sector)		; Volume is not NTFS
-	;ConsoleWrite("Error: Could not find NTFS: " & _HexEncode($sector) & @CRLF)
-	ConsoleWrite("Error: Could not find NTFS" & @CRLF)
+	ConsoleWrite("Error: Could not find NTFS on " & $TargetImageFile & " at offset " & $PartitionStartSector*512 & @CRLF)
     Return 0
 EndFunc   ;==>_TestNTFS
 

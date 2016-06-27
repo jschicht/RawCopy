@@ -2,13 +2,13 @@ Introduction
 This a console application that copy files off NTFS volumes by using low level disk reading method. 
 
 Syntax
-RawCopy /ImageFile:FullPath\ImageFilename /ImageNtfsVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:
+RawCopy /ImageFile:FullPath\ImageFilename /ImageVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:
 
 Explanation of parameters
 /ImageFile:
-The full path and filename of an image file to extract from. If this param is used, then /ImageNtfsVolume: must be set. Optional.
-/ImageNtfsVolume:
-The NTFS volume number to extract from. The count only consider NTFS volumes, so any other FS volume will not count. Only used with /ImageFile:.
+The full path and filename of an image file to extract from. If this param is used, then /ImageVolume: must be set. Optional.
+/ImageVolume:
+The volume number to extract from. If volume is not NTFS nothing will be extracted. Only used with /ImageFile:.
 /FileNamePath:
 The full path and filename of file to extract. Can also be in the form of Volume:MftRef. Mandatory.
 /OutputPath:
@@ -28,6 +28,8 @@ So how do you get the index number of a given file that is not one of the known 
 
 For image files the volume letter in the /FileNamePath: parameter is ignored.
 
+When specifying device paths in /FileNamePath it is possible to access attached devices that does not have any volumes mounted. Examples are HarddiskVolume1, Harddisk0Partition2, HarddiskVolumeShadowCopy1, PhysicalDrive1.
+
 The /WriteFSInfo: parameter can be useful when scripting since SectorsPerCluster and MFTRecordSize is used with LogFileParser and Mft2Csv.
 
 
@@ -45,14 +47,23 @@ RawCopy.exe /FileNamePath:C:0
 Example for extracting MFT reference number 30224 and all attributes including $DATA, and dumping it into C:\tmp:
 RawCopy.exe /FileNamePath:C:30224 /OutputPath:C:\tmp /AllAttr:1
 
-Example for accessing a disk image and extracting MftRef ($LogFile) from NTFS volume number 2.
-RawCopy.exe /ImageFile:e:\temp\diskimage.dd /ImageNtfsVolume:2 /FileNamePath:c:2 /OutputPath:e:\out
+Example for accessing a disk image and extracting MftRef ($LogFile) from volume number 2.
+RawCopy.exe /ImageFile:e:\temp\diskimage.dd /ImageVolume:2 /FileNamePath:c:2 /OutputPath:e:\out
 
 Example for accessing partition/volume image and extracting file.ext and dumping it into E:\out.
-RawCopy.exe /ImageFile:e:\temp\partimage.dd /ImageNtfsVolume:1 /FileNamePath:c:\file.ext /OutputPath:e:\out
+RawCopy.exe /ImageFile:e:\temp\partimage.dd /ImageVolume:1 /FileNamePath:c:\file.ext /OutputPath:e:\out
 
 Example for making a raw dirlisting in detailed mode in c:\$Extend:
 RawCopy.exe /FileNamePath:c:\$Extend /RawDirMode:1
 
 Example for making a raw dirlisting in basic mode in c:\System Volume Information inside a disk image file:
-RawCopy.exe /ImageFile:e:\temp\diskimage.dd /ImageNtfsVolume:1 /FileNamePath:"c:\System Volume Information" /RawDirMode:2
+RawCopy.exe /ImageFile:e:\temp\diskimage.dd /ImageVolume:1 /FileNamePath:"c:\System Volume Information" /RawDirMode:2
+
+Example for making a raw dirlisting in detailed mode on the root level inside a shadow copy:
+RawCopy.exe /FileNamePath:\\.\HarddiskVolumeShadowCopy1:x:\ /RawDirMode:1
+
+Example for extracting $MFT from partition 2 on harddisk 1 and dumping it into e:\out:
+RawCopy.exe /FileNamePath:\\.\Harddisk0Partition2:0 /OutputPath:e:\out
+
+Example for extracting $MFT from second volume on PhysicalDrive0:
+RawCopy.exe /FileNamePath:\\.\PhysicalDrive0:0 /ImageVolume:2 /OutputPath:e:\out
