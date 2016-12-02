@@ -5,7 +5,7 @@
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.15
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.16
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -60,7 +60,7 @@ $VolumesArray[0][0] = "Type"
 $VolumesArray[0][1] = "ByteOffset"
 $VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.15" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.16" & @CRLF & @CRLF)
 _GetInputParams()
 ;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
@@ -1043,7 +1043,12 @@ Func _ReadBootSector($TargetDrive)
 
 	$MFT_Offset = $BytesPerCluster * $LogicalClusterNumberforthefileMFT
 	If $ClustersPerFileRecordSegment > 127 Then
-		$MFT_Record_Size = 2 ^ (256 - $ClustersPerFileRecordSegment)
+		;A really lame fix for a rare bug seen in certain Windows 7 x64 vm's
+		Local $TestVal = 256 - $ClustersPerFileRecordSegment
+		$MFT_Record_Size = 2
+		For $counter = 1 To $TestVal - 1
+			$MFT_Record_Size *= 2
+		Next
 	Else
 		$MFT_Record_Size = $BytesPerCluster * $ClustersPerFileRecordSegment
 	EndIf
