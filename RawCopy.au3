@@ -61,7 +61,7 @@ $VolumesArray[0][0] = "Type"
 $VolumesArray[0][1] = "ByteOffset"
 $VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.16" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.17" & @CRLF & @CRLF)
 _GetInputParams()
 ;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
@@ -125,38 +125,93 @@ $MftRefArray[1]=$NextRef
 $ResolvedPath = $DirArray[1]
 
 For $i = 2 To $DirArray[0]
+	ConsoleWrite(">>>>> $i: " & $i & @CRLF)
 	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+	ConsoleWrite("_FindFileMFTRecord(0x" & Hex(($NextRef)) & " = " & $NextRef & ")"& @CRLF)
 	$RetRec = _FindFileMFTRecord($NextRef)
+	ConsoleWrite("A" & @CRLF)
 	If Not IsArray($RetRec) Then Exit
 	$NewRecord = $RetRec[1]
+	ConsoleWrite("A1" & @CRLF)
+	ConsoleWrite("_DecodeMFTRecord($NewRecord,1) before" & @CRLF)
+	ConsoleWrite("_DecodeMFTRecord(" & Hex(($NewRecord))& ",1) " & @CRLF)
 	_DecodeMFTRecord($NewRecord,1)
-	ConsoleWrite("Parsing INDX records of Mft ref " & $NextRef & " to find " & $DirArray[$i] & @CRLF)
+	ConsoleWrite("A2" & @CRLF)
+	ConsoleWrite("Parsing INDX records of Mft ref " & $NextRef & " to find >" & $DirArray[$i] & "<" & @CRLF)
 	$NextRef = _ParseIndex($DirArray[$i])
+	ConsoleWrite("B" & @CRLF)
+	ConsoleWrite("$i: " & $i & @CRLF)
+	ConsoleWrite("$NextRef: " & $NextRef & @CRLF)
 	$MftRefArray[$i]=$NextRef
 	If @error Then
 		Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+		ConsoleWrite("_FindFileMFTRecord(0x" & Hex(($MftRefArray[$i-1])) & " = " & $MftRefArray[$i-1] & ")"& @CRLF)
 		$RetRec = _FindFileMFTRecord($MftRefArray[$i-1])
+		ConsoleWrite("C" & @CRLF)
 		If Not IsArray($RetRec) Then Exit
 		$NewRecord = $RetRec[1]
+		ConsoleWrite("_DecodeMFTRecord($NewRecord,1) before" & @CRLF)
+		ConsoleWrite("_DecodeMFTRecord(" & Hex(($NewRecord))& ",1) " & @CRLF)
 		_DecodeMFTRecord($NewRecord,1)
+		ConsoleWrite("D" & @CRLF)
 		$LastCheck = _DisplayList($ResolvedPath)
-	ElseIf $i=$DirArray[0] Then
+	ElseIf $i=$DirArray[0] Then ;last one element of the broken full path
 		Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+		ConsoleWrite("$AttributesArr[10][2]: " & $AttributesArr[10][2] & @CRLF)
+		ConsoleWrite("$AttributesArr[9][2]: " & $AttributesArr[9][2] & @CRLF)
+		ConsoleWrite("_FindFileMFTRecord(0x" & Hex(($MftRefArray[$i])) & " = " & $MftRefArray[$i] & ")"& @CRLF)
 		$RetRec = _FindFileMFTRecord($MftRefArray[$i])
+		ConsoleWrite("$AttributesArr[10][2]: " & $AttributesArr[10][2] & @CRLF)
+		ConsoleWrite("$AttributesArr[9][2]: " & $AttributesArr[9][2] & @CRLF)
+		ConsoleWrite("E" & @CRLF)
 		If Not IsArray($RetRec) Then Exit
 		$NewRecord = $RetRec[1]
+		ConsoleWrite("$AttributesArr[10][2]: " & $AttributesArr[10][2] & @CRLF)
+		ConsoleWrite("$AttributesArr[9][2]: " & $AttributesArr[9][2] & @CRLF)
+		ConsoleWrite("_DecodeMFTRecord($NewRecord,1) before" & @CRLF)
+		ConsoleWrite("_DecodeMFTRecord(" & Hex(($NewRecord))& ",1) " & @CRLF)
 		_DecodeMFTRecord($NewRecord,1)
-		$LastCheck = _DisplayList($ResolvedPath & "\" & $DirArray[$i])
-		If @error Then ; In case last part was a file and not a directory
-			Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
-			$RetRec = _FindFileMFTRecord($MftRefArray[$i-1])
-			If Not IsArray($RetRec) Then Exit
-			$NewRecord = $RetRec[1]
-			_DecodeMFTRecord($NewRecord,1)
-			$LastCheck = _DisplayList($ResolvedPath)
+		ConsoleWrite("_DecodeMFTRecord($NewRecord,1) after" & @CRLF)
+		ConsoleWrite("$AttributesArr[10][2]: " & $AttributesArr[10][2] & @CRLF)
+		ConsoleWrite("$AttributesArr[9][2]: " & $AttributesArr[9][2] & @CRLF)
+		ConsoleWrite("F" & @CRLF)
+		ConsoleWrite("DirArray[0] = " & $DirArray[0] & " , $DirArray[$i] = " & $DirArray[$i] & @CRLF)
+
+		; Changed logic: don't call DisplayList to trigger error
+		; if you know upfront that MFTEntry is not directory.
+		; This logic will just trigger going through directory one level up of file in full path
+		; and in case of thousand of files DecodeIndexEntries can take significant
+		; CPU load and duration of many seconds even after optimization of DecodeIndexEntries.
+		;
+		; Check if there are atributes of $INDEX_ROOT or $INDEX_ALLOCATION present
+		; if they are present only then asume that current level is not file
+		; and that is possible that it is a directory which can be then
+		; printed as with option /RawDirMode with three directory listing modes.
+		; Note that $NextRef is not set at all in this branch of code
+		; which is used for final file extraction.
+		;
+		if($AttributesArr[9][2]= "TRUE" or $AttributesArr[9][2]="TRUE") Then
+			$LastCheck = _DisplayList($ResolvedPath & "\" & $DirArray[$i])
+			$mymonkeyerror = @error
+			ConsoleWrite("$LastCheck = " & $LastCheck & @CRLF)
+			ConsoleWrite("@error = " & $mymonkeyerror & @CRLF)
+			If $mymonkeyerror Then ; In case last part was a file and not a directory
+				Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
+				ConsoleWrite("_FindFileMFTRecord(0x" & Hex(($MftRefArray[$i-1])) & " = " & $MftRefArray[$i-1] & ")"& @CRLF)
+				$RetRec = _FindFileMFTRecord($MftRefArray[$i-1])
+				ConsoleWrite("G" & @CRLF)
+				If Not IsArray($RetRec) Then Exit
+				$NewRecord = $RetRec[1]
+				ConsoleWrite("_DecodeMFTRecord($NewRecord,1) before" & @CRLF)
+				ConsoleWrite("_DecodeMFTRecord(" & Hex(($NewRecord))& ",1)" & @CRLF)
+				_DecodeMFTRecord($NewRecord,1)
+				ConsoleWrite("H" & @CRLF)
+				$LastCheck = _DisplayList($ResolvedPath)
+			EndIf
 		EndIf
 	ElseIf StringIsDigit($NextRef) Then
 		$ResolvedPath &= "\" & $DirArray[$i]
+		ConsoleWrite("ContinueLoop: $ResolvedPath = " & $ResolvedPath & @CRLF)
 		ContinueLoop
 	Else
 		ConsoleWrite("Error: Something went wrong" & @CRLF)
@@ -553,6 +608,9 @@ Func _DecodeMFTRecord0($record, $FileRef)      ;produces DataQ
 EndFunc
 
 Func _DecodeMFTRecord($MFTEntry,$MFTMode)
+ConsoleWrite("Starting fuction _DecodeMFTRecord($MFTEntry,$MFTMode)" & @CRLF)
+ConsoleWrite("$MFTEntry = )" & Hex($MFTEntry)& @CRLF)
+ConsoleWrite("$MFTMode = )" & Hex($MFTMode)& @CRLF)
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Local $MFTEntryOrig,$FN_Number,$DATA_Number,$SI_Number,$ATTRIBLIST_Number,$OBJID_Number,$SECURITY_Number,$VOLNAME_Number,$VOLINFO_Number,$INDEXROOT_Number,$INDEXALLOC_Number,$BITMAP_Number,$REPARSEPOINT_Number,$EAINFO_Number,$EA_Number,$PROPERTYSET_Number,$LOGGEDUTILSTREAM_Number
 Local $INDEX_ROOT_ON="FALSE",$INDEX_ALLOCATION_ON="FALSE",$CoreAttribute,$CoreAttributeChunk,$CoreAttributeName
@@ -614,6 +672,7 @@ While 1
 	$AttributeSize = Dec(_SwapEndian($AttributeSize),2)
 	Select
 		Case $AttributeType = $STANDARD_INFORMATION
+			ConsoleWrite("_DecodeMFTRecord():$STANDARD_INFORMATION" & @CRLF)
 ;			$STANDARD_INFORMATION_ON = "TRUE"
 			$SI_Number += 1
 			If $MFTMode = 1 Then
@@ -623,6 +682,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $ATTRIBUTE_LIST
+			ConsoleWrite("_DecodeMFTRecord():$ATTRIBUTE_LIST" & @CRLF)
 ;			$ATTRIBUTE_LIST_ON = "TRUE"
 			$ATTRIBLIST_Number += 1
 			If $MFTMode = 1 Then
@@ -645,6 +705,7 @@ While 1
 			$str &= "FFFFFFFF"		;add end marker
 			$MFTEntry = StringMid($MFTEntry,1,($HEADER_RecordRealSize-8)*2+2) & $str       ;strip "FFFFFFFF..." first
    		Case $AttributeType = $FILE_NAME
+			ConsoleWrite("_DecodeMFTRecord():$FILE_NAME" & @CRLF)
 ;			$FILE_NAME_ON = "TRUE"
 			$FN_Number += 1
 			If $MFTMode = 1 Then
@@ -666,6 +727,7 @@ While 1
 					$NameQ[3] = $attr
 			EndSelect
 		Case $AttributeType = $OBJECT_ID
+			ConsoleWrite("_DecodeMFTRecord():$OBJECT_ID" & @CRLF)
 ;			$OBJECT_ID_ON = "TRUE"
 			$OBJID_Number += 1
 			If $MFTMode = 1 Then
@@ -675,6 +737,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $SECURITY_DESCRIPTOR
+			ConsoleWrite("_DecodeMFTRecord():$SECURITY_DESCRIPTOR" & @CRLF)
 ;			$SECURITY_DESCRIPTOR_ON = "TRUE"
 			$SECURITY_Number += 1
 			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
@@ -687,6 +750,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $VOLUME_NAME
+			ConsoleWrite("_DecodeMFTRecord():$VOLUME_NAME" & @CRLF)
 ;			$VOLUME_NAME_ON = "TRUE"
 			$VOLNAME_Number += 1
 			If $MFTMode = 1 Then
@@ -696,6 +760,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $VOLUME_INFORMATION
+			ConsoleWrite("_DecodeMFTRecord():$VOLUME_INFORMATION" & @CRLF)
 ;			$VOLUME_INFORMATION_ON = "TRUE"
 			$VOLINFO_Number += 1
 			If $MFTMode = 1 Then
@@ -705,10 +770,12 @@ While 1
 				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $DATA
+			ConsoleWrite("_DecodeMFTRecord():$DATA" & @CRLF)
 ;			$DATA_ON = "TRUE"
 			$DATA_Number += 1
 			_ArrayAdd($DataQ, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 		Case $AttributeType = $INDEX_ROOT
+			ConsoleWrite("_DecodeMFTRecord():$INDEX_ROOT" & @CRLF)
 ;			$INDEX_ROOT_ON = "TRUE"
 			$INDEXROOT_Number += 1
 			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
@@ -729,6 +796,7 @@ While 1
 				_Get_IndexRoot($CoreAttributeChunk,$INDEXROOT_Number,$CoreAttributeName)
 			EndIf
 		Case $AttributeType = $INDEX_ALLOCATION
+			ConsoleWrite("_DecodeMFTRecord():$INDEX_ALLOCATION" & @CRLF)
 ;			$INDEX_ALLOCATION_ON = "TRUE"
 			$INDEXALLOC_Number += 1
 			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
@@ -749,6 +817,7 @@ While 1
 				_Get_IndexAllocation($CoreAttributeChunk,$INDEXALLOC_Number,$CoreAttributeName)
 			EndIf
 		Case $AttributeType = $BITMAP
+			ConsoleWrite("_DecodeMFTRecord():$BITMAP" & @CRLF)
 ;			$BITMAP_ON = "TRUE"
 			$BITMAP_Number += 1
 			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
@@ -761,6 +830,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $REPARSE_POINT
+			ConsoleWrite("_DecodeMFTRecord():$REPARSE_POINT" & @CRLF)
 ;			$REPARSE_POINT_ON = "TRUE"
 			$REPARSEPOINT_Number += 1
 			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
@@ -773,6 +843,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $EA_INFORMATION
+			ConsoleWrite("_DecodeMFTRecord():$EA_INFORMATION" & @CRLF)
 ;			$EA_INFORMATION_ON = "TRUE"
 			$EAINFO_Number += 1
 			If $MFTMode = 1 Then
@@ -782,6 +853,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $EA
+			ConsoleWrite("_DecodeMFTRecord():$EA" & @CRLF)
 ;			$EA_ON = "TRUE"
 			$EA_Number += 1
 			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
@@ -794,6 +866,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, $CoreAttributeName)
 			EndIf
 		Case $AttributeType = $PROPERTY_SET
+			ConsoleWrite("_DecodeMFTRecord():$PROPERTY_SET" & @CRLF)
 ;			$PROPERTY_SET_ON = "TRUE"
 			$PROPERTYSET_Number += 1
 			If $MFTMode = 1 Then
@@ -803,6 +876,7 @@ While 1
 				_ArrayAdd($AttribXStreamName, "")
 			EndIf
 		Case $AttributeType = $LOGGED_UTILITY_STREAM
+			ConsoleWrite("_DecodeMFTRecord():$LOGGED_UTILITY_STREAM" & @CRLF)
 ;			$LOGGED_UTILITY_STREAM_ON = "TRUE"
 			$LOGGEDUTILSTREAM_Number += 1
 			$CoreAttribute = _GetAttributeEntry(StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
@@ -821,6 +895,9 @@ While 1
 WEnd
 $AttributesArr[9][2] = $INDEX_ROOT_ON
 $AttributesArr[10][2] = $INDEX_ALLOCATION_ON
+ConsoleWrite("$AttributesArr[10][2]: " & $AttributesArr[10][2] & @CRLF)
+ConsoleWrite("$AttributesArr[9][2]: " & $AttributesArr[9][2] & @CRLF)
+ConsoleWrite("Exiting fuction _DecodeMFTRecord($MFTEntry,$MFTMode)" & @CRLF)
 EndFunc
 
 Func _ExtractDataRuns()
@@ -879,6 +956,8 @@ Func _IsMftRecordSplit($MftRef)
 EndFunc
 
 Func _FindFileMFTRecord($MftRef)
+	ConsoleWrite("Starting function _FindFileMFTRecord($MftRef)" & @crlf)
+	ConsoleWrite(_Now () & "." & _MSec() & @crlf)
 	Local $nBytes, $TmpOffset, $Counter, $Counter2, $RecordJumper, $TargetFileDec, $RecordsTooMuch, $RetVal[2]
 	$TargetFile = _DecToLittleEndian($MftRef)
 	$TargetFileDec = Dec(_SwapEndian($TargetFile),2)
@@ -949,13 +1028,16 @@ Func _FindFileMFTRecord($MftRef)
 		$FoundOffset = Int($TmpOffset[3])-Int($MFT_Record_Size)
 		$RetVal[0] = $FoundOffset
 		$RetVal[1] = $record
+		ConsoleWrite("Exiting function _FindFileMFTRecord($MftRef) - - Return" & @crlf)
+		ConsoleWrite(_Now () & "." & _MSec() & @crlf)
 		Return $RetVal
 	Else
 		ConsoleWrite("Error wrong ref: " & StringMid($record,91,8) & @CRLF)
 		_WinAPI_CloseHandle($hFile)
 		Return ""
 	EndIf
-
+	ConsoleWrite("Exiting function _FindFileMFTRecord($MftRef)" & @crlf)
+	ConsoleWrite(_Now () & "." & _MSec() & @crlf)
 EndFunc
 
 Func _FindMFT($TargetFile)
@@ -1390,6 +1472,8 @@ Func NT_SUCCESS($status)
 EndFunc
 
 Func _GetAttributeEntry($Entry)
+	ConsoleWrite("Starting function _GetAttributeEntry($Entry)" & @crlf)
+	ConsoleWrite(_Now () & "." & _MSec() & @crlf)
 	Local $CoreAttribute,$CoreAttributeTmp,$CoreAttributeArr[2]
 	Local $ATTRIBUTE_HEADER_Length,$ATTRIBUTE_HEADER_NonResidentFlag,$ATTRIBUTE_HEADER_NameLength,$ATTRIBUTE_HEADER_NameRelativeOffset,$ATTRIBUTE_HEADER_Name,$ATTRIBUTE_HEADER_Flags,$ATTRIBUTE_HEADER_AttributeID,$ATTRIBUTE_HEADER_StartVCN,$ATTRIBUTE_HEADER_LastVCN
 	Local $ATTRIBUTE_HEADER_VCNs,$ATTRIBUTE_HEADER_OffsetToDataRuns,$ATTRIBUTE_HEADER_CompressionUnitSize,$ATTRIBUTE_HEADER_Padding,$ATTRIBUTE_HEADER_AllocatedSize,$ATTRIBUTE_HEADER_RealSize,$ATTRIBUTE_HEADER_InitializedStreamSize,$RunListOffset
@@ -1613,6 +1697,8 @@ Func _GetAttributeEntry($Entry)
 	Next
 	$CoreAttributeArr[0] = $CoreAttribute
 	$CoreAttributeArr[1] = $ATTRIBUTE_HEADER_Name
+	ConsoleWrite("Exiting function _GetAttributeEntry($Entry)" & @crlf)
+	ConsoleWrite(_Now () & "." & _MSec() & @crlf)
 	Return $CoreAttributeArr
 EndFunc
 
@@ -1711,6 +1797,7 @@ EndFunc
 
 Func _Get_IndexAllocation($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 	ConsoleWrite("Starting function _Get_IndexAllocation()" & @crlf)
+	ConsoleWrite(_Now () & "." & _MSec() & @crlf)
 	Local $NextPosition = 1,$IndxHdrMagic,$IndxEntries,$TotalIndxEntries
 	ConsoleWrite("StringLen of chunk = " & StringLen($Entry) & @crlf)
 	ConsoleWrite("Expected records = " & StringLen($Entry)/8192 & @crlf)
@@ -1736,6 +1823,7 @@ Func _Get_IndexAllocation($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 ;	ConsoleWrite(_HexEncode("0x"& StringMid($TotalIndxEntries,1)) & @crlf)
 	_DecodeIndxEntries($TotalIndxEntries,$Current_Attrib_Number,$CurrentAttributeName)
 	ConsoleWrite("Exiting function _Get_IndexAllocation()" & @crlf)
+	ConsoleWrite(_Now () & "." & _MSec() & @crlf)
 EndFunc
 
 Func _DecodeIndxEntries($Entry,$Current_Attrib_Number,$CurrentAttributeName)
@@ -1873,7 +1961,11 @@ Func _DecodeIndxEntries($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 	$IndxSubNodeVCNArr[$EntryCounter] = $SubNodeVCN
 ; Work through the rest of the index entries
 	$NextEntryOffset = $NewLocalAttributeOffset+164+($Indx_NameLength*2*2)+$PaddingLength+$SubNodeVCNLength
-	If $NextEntryOffset+64 >= StringLen($Entry) Then Return
+	If $NextEntryOffset+64 >= StringLen($Entry) Then
+		ConsoleWrite("Exiting function _DecodeIndxEntries() - - Return" & @crlf)
+		ConsoleWrite(_Now () & "." & _MSec() & @crlf)
+		Return
+	EndIf
 	ConsoleWrite("$EntryCounter: " & $EntryCounter & @crlf)
 	ConsoleWrite("Before FAST DO LOOP: " & _Now () & "." & _MSec() & @crlf)
 ;
@@ -1964,32 +2056,32 @@ Func _DecodeIndxEntries($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 		$MFTReferenceOfParentSeqNo = StringMid($Entry,$NextEntryOffset+44,4)
 		$MFTReferenceOfParentSeqNo = Dec(StringMid($MFTReferenceOfParentSeqNo,3,2) & StringMid($MFTReferenceOfParentSeqNo,3,2))
 
-;~ 		$Indx_CTime = StringMid($Entry,$NextEntryOffset+48,16)
-;~ 		$Indx_CTime = StringMid($Indx_CTime,15,2) & StringMid($Indx_CTime,13,2) & StringMid($Indx_CTime,11,2) & StringMid($Indx_CTime,9,2) & StringMid($Indx_CTime,7,2) & StringMid($Indx_CTime,5,2) & StringMid($Indx_CTime,3,2) & StringMid($Indx_CTime,1,2)
-;~ 		$Indx_CTime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_CTime)
-;~ 		$Indx_CTime = _WinTime_UTCFileTimeFormat(Dec($Indx_CTime)-$tDelta,$DateTimeFormat,2)
-;~ 		$Indx_CTime = $Indx_CTime & ":" & _FillZero(StringRight($Indx_CTime_tmp,4))
+		$Indx_CTime = StringMid($Entry,$NextEntryOffset+48,16)
+		$Indx_CTime = StringMid($Indx_CTime,15,2) & StringMid($Indx_CTime,13,2) & StringMid($Indx_CTime,11,2) & StringMid($Indx_CTime,9,2) & StringMid($Indx_CTime,7,2) & StringMid($Indx_CTime,5,2) & StringMid($Indx_CTime,3,2) & StringMid($Indx_CTime,1,2)
+		$Indx_CTime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_CTime)
+		$Indx_CTime = _WinTime_UTCFileTimeFormat(Dec($Indx_CTime)-$tDelta,$DateTimeFormat,2)
+		$Indx_CTime = $Indx_CTime & ":" & _FillZero(StringRight($Indx_CTime_tmp,4))
 ;		ConsoleWrite("$Indx_CTime = " & $Indx_CTime & @crlf)
 ;
-;~ 		$Indx_ATime = StringMid($Entry,$NextEntryOffset+64,16)
-;~ 		$Indx_ATime = StringMid($Indx_ATime,15,2) & StringMid($Indx_ATime,13,2) & StringMid($Indx_ATime,11,2) & StringMid($Indx_ATime,9,2) & StringMid($Indx_ATime,7,2) & StringMid($Indx_ATime,5,2) & StringMid($Indx_ATime,3,2) & StringMid($Indx_ATime,1,2)
-;~ 		$Indx_ATime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_ATime)
-;~ 		$Indx_ATime = _WinTime_UTCFileTimeFormat(Dec($Indx_ATime)-$tDelta,$DateTimeFormat,2)
-;~ 		$Indx_ATime = $Indx_ATime & ":" & _FillZero(StringRight($Indx_ATime_tmp,4))
+		$Indx_ATime = StringMid($Entry,$NextEntryOffset+64,16)
+		$Indx_ATime = StringMid($Indx_ATime,15,2) & StringMid($Indx_ATime,13,2) & StringMid($Indx_ATime,11,2) & StringMid($Indx_ATime,9,2) & StringMid($Indx_ATime,7,2) & StringMid($Indx_ATime,5,2) & StringMid($Indx_ATime,3,2) & StringMid($Indx_ATime,1,2)
+		$Indx_ATime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_ATime)
+		$Indx_ATime = _WinTime_UTCFileTimeFormat(Dec($Indx_ATime)-$tDelta,$DateTimeFormat,2)
+		$Indx_ATime = $Indx_ATime & ":" & _FillZero(StringRight($Indx_ATime_tmp,4))
 ;		ConsoleWrite("$Indx_ATime = " & $Indx_ATime & @crlf)
 ;
-;~ 		$Indx_MTime = StringMid($Entry,$NextEntryOffset+80,16)
-;~ 		$Indx_MTime = StringMid($Indx_MTime,15,2) & StringMid($Indx_MTime,13,2) & StringMid($Indx_MTime,11,2) & StringMid($Indx_MTime,9,2) & StringMid($Indx_MTime,7,2) & StringMid($Indx_MTime,5,2) & StringMid($Indx_MTime,3,2) & StringMid($Indx_MTime,1,2)
-;~ 		$Indx_MTime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_MTime)
-;~ 		$Indx_MTime = _WinTime_UTCFileTimeFormat(Dec($Indx_MTime)-$tDelta,$DateTimeFormat,2)
-;~ 		$Indx_MTime = $Indx_MTime & ":" & _FillZero(StringRight($Indx_MTime_tmp,4))
+		$Indx_MTime = StringMid($Entry,$NextEntryOffset+80,16)
+		$Indx_MTime = StringMid($Indx_MTime,15,2) & StringMid($Indx_MTime,13,2) & StringMid($Indx_MTime,11,2) & StringMid($Indx_MTime,9,2) & StringMid($Indx_MTime,7,2) & StringMid($Indx_MTime,5,2) & StringMid($Indx_MTime,3,2) & StringMid($Indx_MTime,1,2)
+		$Indx_MTime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_MTime)
+		$Indx_MTime = _WinTime_UTCFileTimeFormat(Dec($Indx_MTime)-$tDelta,$DateTimeFormat,2)
+		$Indx_MTime = $Indx_MTime & ":" & _FillZero(StringRight($Indx_MTime_tmp,4))
 ;		ConsoleWrite("$Indx_MTime = " & $Indx_MTime & @crlf)
 ;
-;~ 		$Indx_RTime = StringMid($Entry,$NextEntryOffset+96,16)
-;~ 		$Indx_RTime = StringMid($Indx_RTime,15,2) & StringMid($Indx_RTime,13,2) & StringMid($Indx_RTime,11,2) & StringMid($Indx_RTime,9,2) & StringMid($Indx_RTime,7,2) & StringMid($Indx_RTime,5,2) & StringMid($Indx_RTime,3,2) & StringMid($Indx_RTime,1,2)
-;~ 		$Indx_RTime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_RTime)
-;~ 		$Indx_RTime = _WinTime_UTCFileTimeFormat(Dec($Indx_RTime)-$tDelta,$DateTimeFormat,2)
-;~ 		$Indx_RTime = $Indx_RTime & ":" & _FillZero(StringRight($Indx_RTime_tmp,4))
+		$Indx_RTime = StringMid($Entry,$NextEntryOffset+96,16)
+		$Indx_RTime = StringMid($Indx_RTime,15,2) & StringMid($Indx_RTime,13,2) & StringMid($Indx_RTime,11,2) & StringMid($Indx_RTime,9,2) & StringMid($Indx_RTime,7,2) & StringMid($Indx_RTime,5,2) & StringMid($Indx_RTime,3,2) & StringMid($Indx_RTime,1,2)
+		$Indx_RTime_tmp = _WinTime_UTCFileTimeToLocalFileTime("0x" & $Indx_RTime)
+		$Indx_RTime = _WinTime_UTCFileTimeFormat(Dec($Indx_RTime)-$tDelta,$DateTimeFormat,2)
+		$Indx_RTime = $Indx_RTime & ":" & _FillZero(StringRight($Indx_RTime_tmp,4))
 ;		ConsoleWrite("$Indx_RTime = " & $Indx_RTime & @crlf)
 ;
 		$Indx_AllocSize = StringMid($Entry,$NextEntryOffset+112,16)
@@ -2931,8 +3023,12 @@ Func _GenComboDescription($StartSector,$SectorNumber)
 EndFunc   ;==>_GenComboDescription
 
 Func _DisplayList($DirListPath)
+	ConsoleWrite("$DetailMode: " & $DetailMode & @CRLF)
 	If $DetailMode=0 Then
+		ConsoleWrite("$AttributesArr[10][2]: " & $AttributesArr[10][2] & @CRLF)
+		ConsoleWrite("$AttributesArr[9][2]: " & $AttributesArr[9][2] & @CRLF)
 		If $AttributesArr[10][2] <> "TRUE" And $AttributesArr[9][2] <> "TRUE" Then
+			ConsoleWrite("SetError(1) " & @CRLF)
 			Return SetError(1)
 		EndIf
 	ElseIf $DetailMode = 1 Then
