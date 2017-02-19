@@ -1,5 +1,7 @@
 RawCopy Changelog
 
+v1.0.0.17: Optimization of code parsing directories ($I30). Thanks to natocccp. 
+
 v1.0.0.16: Changed calculation of MFT_Record_Size to accomodate for a rare bug seen in certain Windows 7 x64 vm's.
 
 v1.0.0.15: Added support for specifying device paths as /FileNamePath param. Changed param /ImageNtfsVolume to /ImageVolume.
