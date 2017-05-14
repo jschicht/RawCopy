@@ -13,6 +13,8 @@ The volume number to extract from. If volume is not NTFS nothing will be extract
 The full path and filename of file to extract. Can also be in the form of Volume:MftRef. Mandatory.
 /OutputPath:
 The output path to extract file to. Optional. If omitted, then extract path defaults to program directory.
+/OutputName:
+The output filename. Optional. If omitted, then filename be that of the original filename. Only used to override the original filename.
 /AllAttr:
 Boolean flag to trigger extraction of all attributes. Optional. Defaults to 0.
 /RawDirMode:
@@ -30,19 +32,21 @@ For image files the volume letter in the /FileNamePath: parameter is ignored.
 
 When specifying device paths in /FileNamePath it is possible to access attached devices that does not have any volumes mounted. Examples are HarddiskVolume1, Harddisk0Partition2, HarddiskVolumeShadowCopy1, PhysicalDrive1.
 
+In order to extract files from a shadow copy within an image file, you will have to mount the image file beforehand so that Windows will present a symbolic link to the shadow copy such as \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy60. It is recommended to mount the image with a tool such as Arsenal Image Mounter (which is free).
+
 The /WriteFSInfo: parameter can be useful when scripting since SectorsPerCluster and MFTRecordSize is used with LogFileParser and Mft2Csv.
 
 
 Sample usage
 
-Example for copying the pagefile off a running system
-RawCopy.exe /FileNamePath:C:\pagefile.sys /OutputPath:E:\output
+Example for copying the hibernation file off a running system and save it to E:\output\hiberfil_c.sys
+RawCopy.exe /FileNamePath:C:\hiberfil.sys /OutputPath:E:\output /OutputName:hiberfil_c.sys
 
 Example for copying the SYSTEM hive off a running system
 RawCopy.exe /FileNamePath:C:\WINDOWS\system32\config\SYSTEM /OutputPath:E:\output
 
-Example for extracting the $MFT by specifying its index number, into to the program directory.
-RawCopy.exe /FileNamePath:C:0
+Example for extracting the $MFT by specifying its index number, into to the program directory and override the default output filename to MFT_C.bin.
+RawCopy.exe /FileNamePath:C:0 /OutputName:MFT_C.bin
 
 Example for extracting MFT reference number 30224 and all attributes including $DATA, and dumping it into C:\tmp:
 RawCopy.exe /FileNamePath:C:30224 /OutputPath:C:\tmp /AllAttr:1
@@ -65,5 +69,5 @@ RawCopy.exe /FileNamePath:\\.\HarddiskVolumeShadowCopy1:x:\ /RawDirMode:1
 Example for extracting $MFT from partition 2 on harddisk 1 and dumping it into e:\out:
 RawCopy.exe /FileNamePath:\\.\Harddisk0Partition2:0 /OutputPath:e:\out
 
-Example for extracting $MFT from second volume on PhysicalDrive0:
-RawCopy.exe /FileNamePath:\\.\PhysicalDrive0:0 /ImageVolume:2 /OutputPath:e:\out
+Example for extracting $MFT from second volume on PhysicalDrive0, and save it as E:\out\MFT_Pd0Vol2.bin:
+RawCopy.exe /FileNamePath:\\.\PhysicalDrive0:0 /ImageVolume:2 /OutputPath:e:\out /OutputName:MFT_Pd0Vol2.bin

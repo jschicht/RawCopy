@@ -5,7 +5,7 @@
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.17
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.18
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -24,7 +24,7 @@ Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse,
 Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1],$sBuffer,$AttrQ[1]
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxMFTRefSeqNoArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxMFTParentRefSeqNoArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Global $IRArr[12][2],$IndxArr[20][2]
-Global $VolumesArray[1][3],$DetailMode=1, $WriteFSInfo=0
+Global $VolumesArray[1][3],$DetailMode=1, $WriteFSInfo=0, $OutputName
 Global $DateTimeFormat = 6 ; YYYY-MM-DD HH:MM:SS:MSMSMS:NSNSNSNS = 2007-08-18 08:15:37:733:1234
 Global $tDelta = _WinTime_GetUTCToLocalFileTimeDelta()
 Global Const $RecordSignature = '46494C45' ; FILE signature
@@ -60,7 +60,7 @@ $VolumesArray[0][0] = "Type"
 $VolumesArray[0][1] = "ByteOffset"
 $VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.17" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.18" & @CRLF & @CRLF)
 _GetInputParams()
 ;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
@@ -176,6 +176,9 @@ Exit
 
 Func _MainExtract()
 	Local $LocalCoreFilename
+	If $OutputName <> "" Then
+		$FN_FileName = $OutputName
+	EndIf
 	For $i = 1 To UBound($DataQ) - 1
 		_DecodeDataQEntry($DataQ[$i])
 		$AttributeOutFileName = $OutPutPath & "\" & $ADS_Name
@@ -2448,7 +2451,7 @@ Func _GenRefArray()
 EndFunc
 
 Func _GetInputParams()
-	Local $TmpAllAttr, $TmpOutPath, $TmpImageFile, $TmpFileNamePath, $TmpImageVolume, $TmpRawDirMode, $TmpWriteFSInfo, $str1,$str2,$pos,$matchstr
+	Local $TmpAllAttr, $TmpOutPath, $TmpImageFile, $TmpFileNamePath, $TmpImageVolume, $TmpRawDirMode, $TmpWriteFSInfo, $str1,$str2,$pos,$matchstr,$TmpOutName
 	For $i = 1 To $cmdline[0]
 		;ConsoleWrite("Param " & $i & ": " & $cmdline[$i] & @CRLF)
 		If StringLeft($cmdline[$i],14) = "/FileNamePath:" Then $TmpFileNamePath = StringMid($cmdline[$i],15)
@@ -2458,6 +2461,7 @@ Func _GetInputParams()
 		If StringLeft($cmdline[$i],13) = "/ImageVolume:" Then $TmpImageVolume = StringMid($cmdline[$i],14)
 		If StringLeft($cmdline[$i],12) = "/RawDirMode:" Then $TmpRawDirMode = StringMid($cmdline[$i],13)
 		If StringLeft($cmdline[$i],13) = "/WriteFSInfo:" Then $TmpWriteFSInfo = StringMid($cmdline[$i],14)
+		If StringLeft($cmdline[$i],12) = "/OutputName:" Then $TmpOutName = StringMid($cmdline[$i],13)
 	Next
 	If $cmdline[0] = 0 Then
 		_PrintHelp()
@@ -2470,6 +2474,14 @@ Func _GetInputParams()
 		Else
 			$OutPutPath = @ScriptDir
 		EndIf
+	EndIf
+
+	If StringLen($TmpOutName) > 0 Then
+		$OutPutName = $TmpOutName
+		If StringInStr($OutPutName, "\") Then
+			$OutPutName = _GetFilenameFromPath($OutPutName)
+		EndIf
+		$OutPutName = _FixWindowsFilename($OutPutName)
 	EndIf
 
 	If StringLen($TmpAllAttr) > 0 Then
@@ -2693,17 +2705,17 @@ EndFunc
 
 Func _PrintHelp()
 	ConsoleWrite("Syntax:" & @CRLF)
-	ConsoleWrite("RawCopy /ImageFile:FullPath\ImageFilename /ImageVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:[0|1]" & @CRLF)
+	ConsoleWrite("RawCopy /ImageFile:FullPath\ImageFilename /ImageVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /OutputName:FileName /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:[0|1]" & @CRLF)
 	ConsoleWrite("Examples:" & @CRLF)
-	ConsoleWrite("RawCopy /FileNamePath:c:\pagefile.sys /OutputPath:e:\temp" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:c:\hiberfil.sys /OutputPath:e:\temp /OutputName:hiberfil_c.sys" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:c:\pagefile.sys /OutputPath:e:\temp /AllAttr:1" & @CRLF)
-	ConsoleWrite("RawCopy /FileNamePath:c:0 /OutputPath:e:\temp" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:c:0 /OutputPath:e:\temp /OutputName:MFT_C" & @CRLF)
 	ConsoleWrite("RawCopy /ImageFile:e:\temp\diskimage.dd /ImageVolume:2 /FileNamePath:c:2 /OutputPath:e:\out" & @CRLF)
 	ConsoleWrite("RawCopy /ImageFile:e:\temp\partimage.dd /ImageVolume:1 /FileNamePath:c:\file.ext /OutputPath:e:\out" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:c:\$Extend /RawDirMode:1" & @CRLF)
 	ConsoleWrite('RawCopy /ImageFile:e:\temp\diskimage.dd /ImageVolume:2 /FileNamePath:"c:\system volume information" /RawDirMode:2 /WriteFSInfo:1' & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:\\.\HarddiskVolumeShadowCopy1:x:\ /RawDirMode:1" & @CRLF)
-	ConsoleWrite("RawCopy /FileNamePath:\\.\Harddisk0Partition2:0 /OutputPath:e:\out" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:\\.\Harddisk0Partition2:0 /OutputPath:e:\out /OutputName:MFT_Hd0Part2" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:\\.\PhysicalDrive0:0 /ImageVolume:2 /OutputPath:e:\out" & @CRLF)
 EndFunc
 
@@ -3002,5 +3014,25 @@ Func _AlignString($input,$length)
 		If StringLen($input)=$length Then ExitLoop
 		$input = " "&$input
 	WEnd
+	Return $input
+EndFunc
+
+Func _GetFilenameFromPath($FileNamePath)
+	$stringlength = StringLen($FileNamePath)
+	If $stringlength = 0 Then Return SetError(1,0,0)
+	$TmpOffset = StringInStr($FileNamePath, "\", 1, -1)
+	If $TmpOffset = 0 Then Return $FileNamePath
+	Return StringMid($FileNamePath,$TmpOffset+1)
+EndFunc
+
+Func _FixWindowsFilename($input)
+	$input = StringReplace($input, "/", "")
+	$input = StringReplace($input, "\", "")
+	$input = StringReplace($input, ":", "")
+	$input = StringReplace($input, "*", "")
+	$input = StringReplace($input, "?", "")
+	$input = StringReplace($input, '"', "")
+	$input = StringReplace($input, "<", "")
+	$input = StringReplace($input, ">", "")
 	Return $input
 EndFunc
