@@ -5,7 +5,7 @@
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.18
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.19
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -24,7 +24,7 @@ Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse,
 Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1],$sBuffer,$AttrQ[1]
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxMFTRefSeqNoArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxMFTParentRefSeqNoArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Global $IRArr[12][2],$IndxArr[20][2]
-Global $VolumesArray[1][3],$DetailMode=1, $WriteFSInfo=0, $OutputName
+Global $VolumesArray[1][3],$DetailMode=1, $WriteFSInfo=0, $OutputName, $TcpSend=0, $sIPAddress="", $iPort="", $iSocket
 Global $DateTimeFormat = 6 ; YYYY-MM-DD HH:MM:SS:MSMSMS:NSNSNSNS = 2007-08-18 08:15:37:733:1234
 Global $tDelta = _WinTime_GetUTCToLocalFileTimeDelta()
 Global Const $RecordSignature = '46494C45' ; FILE signature
@@ -46,21 +46,12 @@ Global Const $EA = 'E0000000'
 Global Const $PROPERTY_SET = 'F0000000'
 Global Const $LOGGED_UTILITY_STREAM = '00010000'
 Global Const $ATTRIBUTE_END_MARKER = 'FFFFFFFF'
-Global Const $FileInternalInformation = 6
-Global Const $OBJ_CASE_INSENSITIVE = 0x00000040
-Global Const $FILE_DIRECTORY_FILE = 0x00000002
-Global Const $FILE_NON_DIRECTORY_FILE = 0x00000040
-Global Const $FILE_RANDOM_ACCESS = 0x00000800
-Global Const $tagIOSTATUSBLOCK = "dword Status;ptr Information"
-Global Const $tagOBJECTATTRIBUTES = "ulong Length;hwnd RootDirectory;ptr ObjectName;ulong Attributes;ptr SecurityDescriptor;ptr SecurityQualityOfService"
-Global Const $tagUNICODESTRING = "ushort Length;ushort MaximumLength;ptr Buffer"
-Global Const $tagFILEINTERNALINFORMATION = "int IndexNumber;"
 Global $Timerstart = TimerInit()
 $VolumesArray[0][0] = "Type"
 $VolumesArray[0][1] = "ByteOffset"
 $VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.18" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.19" & @CRLF & @CRLF)
 _GetInputParams()
 ;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
@@ -168,9 +159,19 @@ $RetRec = _FindFileMFTRecord($NextRef)
 If Not IsArray($RetRec) Then Exit
 $NewRecord = $RetRec[1]
 _DecodeMFTRecord($NewRecord,1)
+
+If $TcpSend Then
+	TCPStartup()
+EndIf
+
 _MainExtract()
 ConsoleWrite(@CRLF)
 _End($Timerstart)
+
+If $TcpSend Then
+	TCPShutDown()
+EndIf
+
 Exit
 
 
@@ -179,10 +180,20 @@ Func _MainExtract()
 	If $OutputName <> "" Then
 		$FN_FileName = $OutputName
 	EndIf
+	If $TcpSend Then
+		$ConsoleText = "TcpSending"
+		$iSocket = TCPConnect($sIPAddress, $iPort)
+		If @error Then
+			ConsoleWrite("TCPConnect Error: " & @error & @CRLF)
+			Exit
+		EndIf
+	Else
+		$ConsoleText = "Writing"
+	EndIf
 	For $i = 1 To UBound($DataQ) - 1
 		_DecodeDataQEntry($DataQ[$i])
 		$AttributeOutFileName = $OutPutPath & "\" & $ADS_Name
-		ConsoleWrite("Writing: " & $ADS_Name & @CRLF)
+		ConsoleWrite($ConsoleText & ": " & $ADS_Name & @CRLF)
 		If $NonResidentFlag = '00' Then
 			_ExtractResidentFile($AttributeOutFileName, $DATA_LengthOfAttribute, $MFTEntry)
 		Else
@@ -212,10 +223,18 @@ Func _MainExtract()
 			EndIf
 		EndIf
 	Next
+	If $TcpSend Then TCPCloseSocket($iSocket)
 	If Not $DoExtractMeta Then Return
 	$PreservedFileName = $FN_FileName
 	For $i = 1 To UBound($AttribX) - 1
 		$FN_FileName = ""
+		If $TcpSend Then
+			$iSocket = TCPConnect($sIPAddress, $iPort)
+			If @error Then
+				ConsoleWrite("TCPConnect Error: " & @error & @CRLF)
+				Exit
+			EndIf
+		EndIf
 		_DecodeDataQEntry($AttribX[$i])
 
 		If $AttribXCounter[$i] > 1 Then
@@ -232,7 +251,7 @@ Func _MainExtract()
 			EndIf
 		EndIf
 		$AttributeOutFileName = $OutPutPath & "\" & $LocalCoreFilename
-		ConsoleWrite("Writing: " & $LocalCoreFilename & @CRLF)
+		ConsoleWrite($ConsoleText & ": " & $LocalCoreFilename & @CRLF)
 
 		If $NonResidentFlag = '00' Then
 			_ExtractResidentFile($AttributeOutFileName, $DATA_LengthOfAttribute, $MFTEntry)
@@ -262,6 +281,7 @@ Func _MainExtract()
 				$i = $j
 			EndIf
 		EndIf
+		If $TcpSend Then TCPCloseSocket($iSocket)
 	Next
 EndFunc
 
@@ -274,54 +294,6 @@ Func _GenDirArray($InPath)
 	Next
 	$Reconstruct = StringTrimRight($Reconstruct,1)
 	Return $Reconstruct
-EndFunc
-
-Func _GetIndexNumber($file, $mode)
-	Local $IndexNumber
-    Local $hNTDLL = DllOpen("ntdll.dll")
-    Local $szName = DllStructCreate("wchar[260]")
-    Local $sUS = DllStructCreate($tagUNICODESTRING)
-    Local $sOA = DllStructCreate($tagOBJECTATTRIBUTES)
-    Local $sISB = DllStructCreate($tagIOSTATUSBLOCK)
-    Local $buffer = DllStructCreate("byte[16384]")
-    Local $ret, $FILE_MODE
-    If $mode == 0 Then
-        $FILE_MODE = $FILE_NON_DIRECTORY_FILE
-    Else
-        $FILE_MODE = $FILE_DIRECTORY_FILE
-    EndIf
-    $file = "\??\" & $file
-    DllStructSetData($szName, 1, $file)
-    $ret = DllCall($hNTDLL, "none", "RtlInitUnicodeString", "ptr", DllStructGetPtr($sUS), "ptr", DllStructGetPtr($szName))
-    DllStructSetData($sOA, "Length", DllStructGetSize($sOA))
-    DllStructSetData($sOA, "RootDirectory", 0)
-    DllStructSetData($sOA, "ObjectName", DllStructGetPtr($sUS))
-    DllStructSetData($sOA, "Attributes", $OBJ_CASE_INSENSITIVE)
-    DllStructSetData($sOA, "SecurityDescriptor", 0)
-    DllStructSetData($sOA, "SecurityQualityOfService", 0)
-    $ret = DllCall($hNTDLL, "int", "NtOpenFile", "hwnd*", "", "dword", $GENERIC_READ, "ptr", DllStructGetPtr($sOA), "ptr", DllStructGetPtr($sISB), _
-                                "ulong", $FILE_SHARE_READ, "ulong", BitOR($FILE_MODE, $FILE_RANDOM_ACCESS))
-	If NT_SUCCESS($ret[0]) Then
-;		ConsoleWrite("NtOpenFile: Success" & @CRLF)
-	Else
-;		ConsoleWrite("Error: NtOpenFile returned: 0x" & Hex($ret[0],8) & @CRLF)
-		Return SetError(1,0,"Error: NtOpenFile returned: 0x" & Hex($ret[0],8))
-	EndIf
-    Local $hFile = $ret[1]
-    $ret = DllCall($hNTDLL, "int", "NtQueryInformationFile", "hwnd", $hFile, "ptr", DllStructGetPtr($sISB), "ptr", DllStructGetPtr($buffer), _
-                                "int", 16384, "ptr", $FileInternalInformation)
-
-    If NT_SUCCESS($ret[0]) Then
-        Local $pFSO = DllStructGetPtr($buffer)
-		Local $sFSO = DllStructCreate($tagFILEINTERNALINFORMATION, $pFSO)
-		Local $IndexNumber = DllStructGetData($sFSO, "IndexNumber")
-    Else
-;        ConsoleWrite("Error: NtQueryInformationFile returned: 0x" & Hex($ret[0],8) & @CRLF)
-		Return SetError(1,0,"Error: NtQueryInformationFile returned: 0x" & Hex($ret[0],8))
-    EndIf
-    $ret = DllCall($hNTDLL, "int", "NtClose", "hwnd", $hFile)
-    DllClose($hNTDLL)
-	Return $IndexNumber
 EndFunc
 
 Func _ExtractSingleFile($MFTReferenceNumber)
@@ -1175,16 +1147,36 @@ Func _ExtractFile($record)
 EndFunc
 
 Func _WriteZeros($hfile, $count)
-   Local $nBytes
-   If Not IsDllStruct($sBuffer) Then _CreateSparseBuffer()
-   While $count > $BytesPerCluster * 16
-	  _WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * 16, $nBytes)
-	  $count -= $BytesPerCluster * 16
-	  $ProgressSize = $DATA_RealSize - $count
-   WEnd
-   If $count <> 0 Then _WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $count, $nBytes)
-   $ProgressSize = $DATA_RealSize
-   Return 0
+	Local $nBytes
+	If Not IsDllStruct($sBuffer) Then _CreateSparseBuffer()
+	While $count > $BytesPerCluster * 16
+		If $TcpSend Then
+			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($sBuffer))
+			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			TCPSend($iSocket, $TcpData)
+			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+			$TcpBuff=""
+			$TcpData=""
+		Else
+			_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * 16, $nBytes)
+		EndIf
+		$count -= $BytesPerCluster * 16
+		$ProgressSize = $DATA_RealSize - $count
+	WEnd
+	If $count <> 0 Then
+		If $TcpSend Then
+			Local $TcpBuff = DllStructCreate("byte["&$count&"]", DllStructGetPtr($sBuffer))
+			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			TCPSend($iSocket, $TcpData)
+			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+			$TcpBuff=""
+			$TcpData=""
+		Else
+			_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $count, $nBytes)
+		EndIf
+	EndIf
+	$ProgressSize = $DATA_RealSize
+	Return 0
 EndFunc
 
 Func _DoCompressed($hFile, $cBuffer, $record)
@@ -1210,11 +1202,29 @@ Func _DoCompressed($hFile, $cBuffer, $record)
 			DllStructSetData($dBuffer, 1, $Decompressed[0])
 		 EndIf
 		 If $FileSize > $Decompressed[1] Then
-			_WinAPI_WriteFile($hFile, DllStructGetPtr($dBuffer), $Decompressed[1], $nBytes)
+			If $TcpSend Then
+				Local $TcpBuff = DllStructCreate("byte["&$Decompressed[1]&"]", DllStructGetPtr($dBuffer))
+				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				TCPSend($iSocket, $TcpData)
+				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+				$TcpBuff=""
+				$TcpData=""
+			Else
+				_WinAPI_WriteFile($hFile, DllStructGetPtr($dBuffer), $Decompressed[1], $nBytes)
+			EndIf
 			$FileSize -= $Decompressed[1]
 			$ProgressSize = $FileSize
 		 Else
-			_WinAPI_WriteFile($hFile, DllStructGetPtr($dBuffer), $FileSize, $nBytes)
+			If $TcpSend Then
+				Local $TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($dBuffer))
+				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				TCPSend($iSocket, $TcpData)
+				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+				$TcpBuff=""
+				$TcpData=""
+			Else
+				_WinAPI_WriteFile($hFile, DllStructGetPtr($dBuffer), $FileSize, $nBytes)
+			EndIf
 		 EndIf
 		 $r += 1
 	  ElseIf $RUN_VCN[$r]=0 Then
@@ -1238,53 +1248,107 @@ Func _DoCompressed($hFile, $cBuffer, $record)
 EndFunc
 
 Func _DoNormal($r, $hFile, $cBuffer, $FileSize)
-   Local $nBytes
-   _WinAPI_SetFilePointerEx($hDisk, $ImageOffset+$RUN_VCN[$r]*$BytesPerCluster, $FILE_BEGIN)
-   $i = $RUN_Clusters[$r]
-   While $i > 16 And $FileSize > $BytesPerCluster * 16
-	  _WinAPI_ReadFile($hDisk, DllStructGetPtr($cBuffer), $BytesPerCluster * 16, $nBytes)
-	  _WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $BytesPerCluster * 16, $nBytes)
-	  $i -= 16
-	  $FileSize -= $BytesPerCluster * 16
-	  $ProgressSize = $FileSize
-   WEnd
-   If $i = 0 Or $FileSize = 0 Then Return $FileSize
-   If $i > 16 Then $i = 16
-   _WinAPI_ReadFile($hDisk, DllStructGetPtr($cBuffer), $BytesPerCluster * $i, $nBytes)
-   If $FileSize > $BytesPerCluster * $i Then
-	  _WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $BytesPerCluster * $i, $nBytes)
-	  $FileSize -= $BytesPerCluster * $i
-	  $ProgressSize = $FileSize
-	  Return $FileSize
-   Else
-	  _WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $FileSize, $nBytes)
-	  $ProgressSize = 0
-	  Return 0
-   EndIf
+	Local $nBytes
+	_WinAPI_SetFilePointerEx($hDisk, $ImageOffset+$RUN_VCN[$r]*$BytesPerCluster, $FILE_BEGIN)
+	$i = $RUN_Clusters[$r]
+	While $i > 16 And $FileSize > $BytesPerCluster * 16
+		_WinAPI_ReadFile($hDisk, DllStructGetPtr($cBuffer), $BytesPerCluster * 16, $nBytes)
+		If $TcpSend Then
+			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($cBuffer))
+			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			TCPSend($iSocket, $TcpData)
+			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+			$TcpBuff=""
+			$TcpData=""
+		Else
+			_WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $BytesPerCluster * 16, $nBytes)
+		EndIf
+		$i -= 16
+		$FileSize -= $BytesPerCluster * 16
+		$ProgressSize = $FileSize
+	WEnd
+	If $i = 0 Or $FileSize = 0 Then Return $FileSize
+	If $i > 16 Then $i = 16
+	_WinAPI_ReadFile($hDisk, DllStructGetPtr($cBuffer), $BytesPerCluster * $i, $nBytes)
+	If $FileSize > $BytesPerCluster * $i Then
+		If $TcpSend Then
+			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * $i&"]", DllStructGetPtr($cBuffer))
+			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			TCPSend($iSocket, $TcpData)
+			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+			$TcpBuff=""
+			$TcpData=""
+		Else
+			_WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $BytesPerCluster * $i, $nBytes)
+		EndIf
+		$FileSize -= $BytesPerCluster * $i
+		$ProgressSize = $FileSize
+		Return $FileSize
+	Else
+		If $TcpSend Then
+			Local $TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($cBuffer))
+			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			TCPSend($iSocket, $TcpData)
+			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+			$TcpBuff=""
+			$TcpData=""
+		Else
+			_WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $FileSize, $nBytes)
+		EndIf
+		$ProgressSize = 0
+		Return 0
+	EndIf
 EndFunc
 
 Func _DoSparse($r,$hFile,$FileSize)
-   Local $nBytes
-   If Not IsDllStruct($sBuffer) Then _CreateSparseBuffer()
-   $i = $RUN_Clusters[$r]
-   While $i > 16 And $FileSize > $BytesPerCluster * 16
-	 _WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * 16, $nBytes)
-	 $i -= 16
-	 $FileSize -= $BytesPerCluster * 16
-	 $ProgressSize = $FileSize
-   WEnd
-   If $i <> 0 Then
- 	 If $FileSize > $BytesPerCluster * $i Then
-		_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * $i, $nBytes)
-		$FileSize -= $BytesPerCluster * $i
+	Local $nBytes
+	If Not IsDllStruct($sBuffer) Then _CreateSparseBuffer()
+	$i = $RUN_Clusters[$r]
+	While $i > 16 And $FileSize > $BytesPerCluster * 16
+		If $TcpSend Then
+			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($sBuffer))
+			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			TCPSend($iSocket, $TcpData)
+			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+			$TcpBuff=""
+			$TcpData=""
+		Else
+			_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * 16, $nBytes)
+		EndIf
+		$i -= 16
+		$FileSize -= $BytesPerCluster * 16
 		$ProgressSize = $FileSize
-	 Else
-		_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $FileSize, $nBytes)
-		$ProgressSize = 0
-		Return 0
-	 EndIf
-   EndIf
-   Return $FileSize
+	WEnd
+	If $i <> 0 Then
+		If $FileSize > $BytesPerCluster * $i Then
+			If $TcpSend Then
+				Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * $i&"]", DllStructGetPtr($sBuffer))
+				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				TCPSend($iSocket, $TcpData)
+				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+				$TcpBuff=""
+				$TcpData=""
+			Else
+				_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * $i, $nBytes)
+			EndIf
+			$FileSize -= $BytesPerCluster * $i
+			$ProgressSize = $FileSize
+		Else
+			If $TcpSend Then
+				Local $TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($sBuffer))
+				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				TCPSend($iSocket, $TcpData)
+				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+				$TcpBuff=""
+				$TcpData=""
+			Else
+				_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $FileSize, $nBytes)
+			EndIf
+			$ProgressSize = 0
+			Return 0
+		EndIf
+	EndIf
+	Return $FileSize
 EndFunc
 
 Func _CreateSparseBuffer()
@@ -1318,14 +1382,23 @@ Func _ExtractResidentFile($Name, $Size, $record)
 	Local $nBytes
 	$xBuffer = DllStructCreate("byte[" & $Size & "]")
     DllStructSetData($xBuffer, 1, '0x' & $DataRun)
-	$hFile = _WinAPI_CreateFile($Name,3,6,7)
-	If $hFile Then
-		_WinAPI_SetFilePointer($hFile, 0,$FILE_BEGIN)
-		_WinAPI_WriteFile($hFile, DllStructGetPtr($xBuffer), $Size, $nBytes)
-		_WinAPI_CloseHandle($hFile)
-		Return
+	If $TcpSend Then
+		Local $TcpBuff = DllStructCreate("byte["&$Size&"]", DllStructGetPtr($xBuffer))
+		Local $TcpData = DllStructGetData($TcpBuff, 1)
+		TCPSend($iSocket, $TcpData)
+		If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
+		$TcpBuff=""
+		$TcpData=""
 	Else
-		ConsoleWrite("Error CreateFile for resident file" & @CRLF)
+		$hFile = _WinAPI_CreateFile($Name,3,6,7)
+		If $hFile Then
+			_WinAPI_SetFilePointer($hFile, 0,$FILE_BEGIN)
+			_WinAPI_WriteFile($hFile, DllStructGetPtr($xBuffer), $Size, $nBytes)
+			_WinAPI_CloseHandle($hFile)
+			Return
+		Else
+			ConsoleWrite("Error CreateFile for resident file" & @CRLF)
+		EndIf
 	EndIf
 EndFunc
 
@@ -2451,7 +2524,7 @@ Func _GenRefArray()
 EndFunc
 
 Func _GetInputParams()
-	Local $TmpAllAttr, $TmpOutPath, $TmpImageFile, $TmpFileNamePath, $TmpImageVolume, $TmpRawDirMode, $TmpWriteFSInfo, $str1,$str2,$pos,$matchstr,$TmpOutName
+	Local $TmpAllAttr, $TmpOutPath, $TmpImageFile, $TmpFileNamePath, $TmpImageVolume, $TmpRawDirMode, $TmpWriteFSInfo, $str1,$str2,$pos,$matchstr,$TmpOutName,$TmpTcpSend
 	For $i = 1 To $cmdline[0]
 		;ConsoleWrite("Param " & $i & ": " & $cmdline[$i] & @CRLF)
 		If StringLeft($cmdline[$i],14) = "/FileNamePath:" Then $TmpFileNamePath = StringMid($cmdline[$i],15)
@@ -2462,17 +2535,39 @@ Func _GetInputParams()
 		If StringLeft($cmdline[$i],12) = "/RawDirMode:" Then $TmpRawDirMode = StringMid($cmdline[$i],13)
 		If StringLeft($cmdline[$i],13) = "/WriteFSInfo:" Then $TmpWriteFSInfo = StringMid($cmdline[$i],14)
 		If StringLeft($cmdline[$i],12) = "/OutputName:" Then $TmpOutName = StringMid($cmdline[$i],13)
+		If StringLeft($cmdline[$i],9) = "/TcpSend:" Then $TmpTcpSend = StringMid($cmdline[$i],10)
 	Next
 	If $cmdline[0] = 0 Then
 		_PrintHelp()
 		Exit
 	EndIf
 
-	If StringLen($TmpOutPath) > 0 Then
-		If FileExists($TmpOutPath) Then
-			$OutPutPath = $TmpOutPath
+	If StringLen($TmpTcpSend) > 0 Then
+		If $TmpTcpSend=1 Then
+			$TcpSend = 1
 		Else
-			$OutPutPath = @ScriptDir
+			$TcpSend = 0
+		EndIf
+	EndIf
+
+	If StringLen($TmpOutPath) > 0 Then
+		If $TcpSend Then
+			$IpAndPortTest = _CheckIpAndPort($TmpOutPath)
+			$Error = @error
+			If Not $Error Then
+				$TcpSend = 1
+				$sIPAddress = $IpAndPortTest[0]
+				$iPort = $IpAndPortTest[1]
+			Else
+				ConsoleWrite("Error: Configuration of TcpSend failed: " & $Error & @CRLF)
+				Exit
+			EndIf
+		Else
+			If FileExists($TmpOutPath) Then
+				$OutPutPath = $TmpOutPath
+			Else
+				$OutPutPath = @ScriptDir
+			EndIf
 		EndIf
 	EndIf
 
@@ -2717,6 +2812,7 @@ Func _PrintHelp()
 	ConsoleWrite("RawCopy /FileNamePath:\\.\HarddiskVolumeShadowCopy1:x:\ /RawDirMode:1" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:\\.\Harddisk0Partition2:0 /OutputPath:e:\out /OutputName:MFT_Hd0Part2" & @CRLF)
 	ConsoleWrite("RawCopy /FileNamePath:\\.\PhysicalDrive0:0 /ImageVolume:2 /OutputPath:e:\out" & @CRLF)
+	ConsoleWrite("RawCopy /FileNamePath:c:\$LogFile /TcpSend:1 /OutputPath:10.10.10.10:6666" & @CRLF)
 EndFunc
 
 Func _ProcessImage($TargetImageFile)
@@ -3035,4 +3131,30 @@ Func _FixWindowsFilename($input)
 	$input = StringReplace($input, "<", "")
 	$input = StringReplace($input, ">", "")
 	Return $input
+EndFunc
+
+Func _CheckIpAndPort($Input)
+	Local $Ret[2]
+	If Not StringInStr($Input, ":") Then Return SetError(1)
+	Local $Test = StringSplit($Input, ":")
+	If $Test[0] <> 2 Then Return SetError(2)
+	$Ip = $Test[1]
+	$Port = $Test[2]
+	If Not (StringIsDigit($Port) And $Port > 0 And $Port <= 65535) Then Return SetError(4)
+	TCPStartup()
+	If Not _IsIP($Ip) Then
+		$Ip = TCPNameToIP($Ip)
+		If @error Then
+			Return SetError(3)
+		EndIf
+	EndIf
+	;ConsoleWrite("$Ip: " & $Ip & @CRLF)
+	TCPShutDown()
+	$Ret[0] = $Ip
+	$Ret[1] = $Port
+	Return $Ret
+EndFunc
+
+Func _IsIP($ip)
+    Return StringRegExp ($ip, "^(?:(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?1)$")
 EndFunc

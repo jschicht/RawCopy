@@ -1,5 +1,7 @@
 RawCopy Changelog
 
+v1.0.0.19: Added new feature for sending data to network over tcp. Removed unused code.
+
 v1.0.0.18: Added new optional parameter /OutputName to override the original filename.
 
 v1.0.0.17: Optimization of code parsing directories ($I30). Thanks to natocccp. 

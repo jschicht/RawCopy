@@ -2,7 +2,7 @@ Introduction
 This a console application that copy files off NTFS volumes by using low level disk reading method. 
 
 Syntax
-RawCopy /ImageFile:FullPath\ImageFilename /ImageVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:
+RawCopy /ImageFile:FullPath\ImageFilename /ImageVolume:[1,2...n] /FileNamePath:FullPath\Filename /OutputPath:FullPath /AllAttr:[0|1] /RawDirMode:[0|1|2] /WriteFSInfo:[0|1] /TcpSend:[0|1]
 
 Explanation of parameters
 /ImageFile:
@@ -21,6 +21,8 @@ Boolean flag to trigger extraction of all attributes. Optional. Defaults to 0.
 An optional directory listing mode. 0 is no print. 1 is detailed print. 2 is basic print. If omitted it defaults to 0. Can be used in conjunction with any of the other parameters, however in order for this it is not possible to define FileNamePath with an MftRef.
 /WriteFSInfo:
 An optional boolean flag for writing a file with some volume information into VolInfo.txt in the defined output directory.
+/TcpSend
+An optional boolean flag for indicating that output should be sent over network. If this flag is set, then /OutputPath: value must be IP:PORT or DOMAIN:PORT
 
 This tool will let you copy files that usually are not accessible because the system has locked them. For instance the registry hives like SYSTEM and SAM. Or files inside the "System Volume Information". Or pagefile.sys. Or any file on the filesystem.
 
@@ -35,6 +37,8 @@ When specifying device paths in /FileNamePath it is possible to access attached 
 In order to extract files from a shadow copy within an image file, you will have to mount the image file beforehand so that Windows will present a symbolic link to the shadow copy such as \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy60. It is recommended to mount the image with a tool such as Arsenal Image Mounter (which is free).
 
 The /WriteFSInfo: parameter can be useful when scripting since SectorsPerCluster and MFTRecordSize is used with LogFileParser and Mft2Csv.
+
+When using /TcpSend:1 to send output to network you must obviously have something listening on the destination for this to work. For instance netcat. For now, the data is sent as is over network unencrypted.
 
 
 Sample usage
@@ -71,3 +75,7 @@ RawCopy.exe /FileNamePath:\\.\Harddisk0Partition2:0 /OutputPath:e:\out
 
 Example for extracting $MFT from second volume on PhysicalDrive0, and save it as E:\out\MFT_Pd0Vol2.bin:
 RawCopy.exe /FileNamePath:\\.\PhysicalDrive0:0 /ImageVolume:2 /OutputPath:e:\out /OutputName:MFT_Pd0Vol2.bin
+
+Example for extracting $LogFile from system volume and send it over the network:
+RawCopy.exe /FileNamePath:c:\$LogFile /TcpSend:1 /OutputPath:10.10.10.10:6666
+RawCopy.exe /FileNamePath:c:\$LogFile /TcpSend:1 /OutputPath:www.mypublicdomain.com:6666
