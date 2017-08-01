@@ -40,6 +40,8 @@ The /WriteFSInfo: parameter can be useful when scripting since SectorsPerCluster
 
 When using /TcpSend:1 to send output to network you must obviously have something listening on the destination for this to work. For instance netcat. For now, the data is sent as is over network unencrypted.
 
+This version is incompatible with Windows 2000 / NTFS 3.0. I have prepared a special build from v1.0.0.19 that can be used there; https://github.com/jschicht/RawCopy/releases/download/1.0.0.19/RawCopy_v1.0.0.19_.Win2000.zip  Earlier versions have not been tested.
+
 
 Sample usage
 
