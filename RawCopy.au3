@@ -5,7 +5,7 @@
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.19
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.20
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -51,7 +51,7 @@ $VolumesArray[0][0] = "Type"
 $VolumesArray[0][1] = "ByteOffset"
 $VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.19" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.20" & @CRLF & @CRLF)
 _GetInputParams()
 ;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
@@ -81,6 +81,10 @@ _GetRunsFromAttributeListMFT0() ;produces datarun for $MFT and converts datarun 
 $MFTSize = $DATA_RealSize
 $MFT_RUN_VCN = $RUN_VCN
 $MFT_RUN_Clusters = $RUN_Clusters
+
+If $TcpSend Then
+	TCPStartup()
+EndIf
 
 If StringIsDigit($IndexNumber) Then
 	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
@@ -159,10 +163,6 @@ $RetRec = _FindFileMFTRecord($NextRef)
 If Not IsArray($RetRec) Then Exit
 $NewRecord = $RetRec[1]
 _DecodeMFTRecord($NewRecord,1)
-
-If $TcpSend Then
-	TCPStartup()
-EndIf
 
 _MainExtract()
 ConsoleWrite(@CRLF)
