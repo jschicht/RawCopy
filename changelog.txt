@@ -1,5 +1,7 @@
 RawCopy Changelog
 
+v1.0.0.21: Fixed tiny bug that caused an empty file to be created on local disk with tcpSend option.
+
 v1.0.0.20: Fixed bug with tcpsend and source being MftRef.
 
 v1.0.0.19: Added new feature for sending data to network over tcp. Removed unused code.

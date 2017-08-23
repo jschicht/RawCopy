@@ -5,7 +5,7 @@
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.20
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.21
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -51,7 +51,7 @@ $VolumesArray[0][0] = "Type"
 $VolumesArray[0][1] = "ByteOffset"
 $VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.20" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.21" & @CRLF & @CRLF)
 _GetInputParams()
 ;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
@@ -1122,7 +1122,11 @@ EndFunc
 Func _ExtractFile($record)
 	$cBuffer = DllStructCreate("byte[" & $BytesPerCluster * 16 & "]")
     $zflag = 0
-	$hFile = _WinAPI_CreateFile($AttributeOutFileName,3,6,7)
+	If $TcpSend Then
+		$hFile = 1
+	Else
+		$hFile = _WinAPI_CreateFile($AttributeOutFileName,3,6,7)
+	EndIf
 	If $hFile Then
 		Select
 			Case UBound($RUN_VCN) = 1		;no data, do nothing
