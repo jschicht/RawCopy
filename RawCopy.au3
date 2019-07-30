@@ -1,13 +1,20 @@
 #RequireAdmin
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
 #AutoIt3Wrapper_Icon=C:\Program Files (x86)\AutoIt3\Icons\au3.ico
+#AutoIt3Wrapper_Outfile=RawCopy.exe
+#AutoIt3Wrapper_Outfile_x64=RawCopy64.exe
 #AutoIt3Wrapper_UseUpx=y
+#AutoIt3Wrapper_Compile_Both=y
+#AutoIt3Wrapper_UseX64=y
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Raw file copy
 #AutoIt3Wrapper_Res_Description=Copy files from NTFS volumes by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.21
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.22
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
+#AutoIt3Wrapper_AU3Check_Parameters=-w 3 -w 5
+#AutoIt3Wrapper_Run_Au3Stripper=y
+#Au3Stripper_Parameters=/sf /sv /rm /pe
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 #Include <WinAPIEx.au3>
 #include <Array.au3>
@@ -19,9 +26,9 @@
 Global $LockedFileName,$DirArray,$NeedIndx=0, $ResidentIndx, $AttributesArr[18][4], $DoExtractMeta=False, $TargetFileName, $DATA_Name, $FN_FileName, $NameQ[5], $LogicalClusterNumberforthefileMFT, $SectorsPerCluster, $BytesPerSector, $SectorsPerMftRecord, $ClustersPerFileRecordSegment, $MftAttrListString, $SplitMftRecArr[1]
 Global $TargetImageFile, $Entries, $InputFile, $IsShadowCopy=False, $IsPhysicalDrive=False, $IsImage=False, $hDisk, $sBuffer, $ComboPhysicalDrives, $Combo
 Global $OutPutPath=@ScriptDir, $InitState = False, $DATA_Clusters, $AttributeOutFileName, $DATA_InitSize, $ImageOffset=0, $ADS_Name, $IndexNumber, $NonResidentFlag, $DATA_RealSize, $DataRun, $DATA_LengthOfAttribute
-Global $TargetDrive = "", $ALInnerCouner, $MFTSize, $TargetOffset, $SectorsPerCluster,$MFT_Record_Size,$BytesPerCluster,$BytesPerSector,$MFT_Offset,$IsDirectory
+Global $TargetDrive = "", $ALInnerCouner, $MFTSize, $TargetOffset, $MFT_Record_Size, $BytesPerCluster, $MFT_Offset, $IsDirectory
 Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse, $_COMMON_KERNEL32DLL=DllOpen("kernel32.dll"), $Filetree[1]
-Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1],$sBuffer,$AttrQ[1]
+Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1], $AttrQ[1]
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxMFTRefSeqNoArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxMFTParentRefSeqNoArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Global $IRArr[12][2],$IndxArr[20][2]
 Global $VolumesArray[1][3],$DetailMode=1, $WriteFSInfo=0, $OutputName, $TcpSend=0, $sIPAddress="", $iPort="", $iSocket
@@ -51,7 +58,7 @@ $VolumesArray[0][0] = "Type"
 $VolumesArray[0][1] = "ByteOffset"
 $VolumesArray[0][2] = "Sectors"
 
-ConsoleWrite("RawCopy v1.0.0.21" & @CRLF & @CRLF)
+ConsoleWrite("RawCopy v1.0.0.22" & @CRLF & @CRLF)
 _GetInputParams()
 ;_ArrayDisplay($VolumesArray,"$VolumesArray")
 $ParentDir = _GenDirArray($TargetFileName)
@@ -114,6 +121,10 @@ For $i = 2 To $DirArray[0]
 	_DecodeMFTRecord($NewRecord,1)
 ;	ConsoleWrite("Parsing INDX records of Mft ref " & $NextRef & " to find " & $DirArray[$i] & @CRLF)
 	$NextRef = _ParseIndex($DirArray[$i])
+	If @error Then
+		ConsoleWrite("Error: Unable to find the file " & $DirArray[$i] & " by index scanning" & @CRLF)
+		Exit
+	EndIf
 	$MftRefArray[$i]=$NextRef
 	If @error Then
 		Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$AttribXStreamName[1]
@@ -195,7 +206,7 @@ Func _MainExtract()
 		$AttributeOutFileName = $OutPutPath & "\" & $ADS_Name
 		ConsoleWrite($ConsoleText & ": " & $ADS_Name & @CRLF)
 		If $NonResidentFlag = '00' Then
-			_ExtractResidentFile($AttributeOutFileName, $DATA_LengthOfAttribute, $MFTEntry)
+			_ExtractResidentFile($AttributeOutFileName, $DATA_LengthOfAttribute)
 		Else
 			Global $RUN_VCN[1], $RUN_Clusters[1]
 			$TotalClusters = $Data_Clusters
@@ -254,7 +265,7 @@ Func _MainExtract()
 		ConsoleWrite($ConsoleText & ": " & $LocalCoreFilename & @CRLF)
 
 		If $NonResidentFlag = '00' Then
-			_ExtractResidentFile($AttributeOutFileName, $DATA_LengthOfAttribute, $MFTEntry)
+			_ExtractResidentFile($AttributeOutFileName, $DATA_LengthOfAttribute)
 		Else
 			Global $RUN_VCN[1], $RUN_Clusters[1]
 			$TotalClusters = $Data_Clusters
@@ -287,7 +298,7 @@ EndFunc
 
 Func _GenDirArray($InPath)
 	Local $Reconstruct
-	Global $DirArray = StringSplit($InPath,"\")
+	$DirArray = StringSplit($InPath,"\")
 	$LockedFileName = $DirArray[$DirArray[0]]
 	For $i = 1 To $DirArray[0]-1
 		$Reconstruct &= $DirArray[$i]&"\"
@@ -315,7 +326,7 @@ Func _ExtractSingleFile($MFTReferenceNumber)
 EndFunc
 
 Func _DecodeAttrList($TargetFile, $AttrList)
-	Local $offset, $length, $nBytes, $hFile, $LocalAttribID, $LocalName, $ALRecordLength, $ALNameLength, $ALNameOffset
+	Local $offset, $nBytes, $hFile, $LocalName, $ALNameLength
 	If StringMid($AttrList, 17, 2) = "00" Then		;attribute list is in $AttrList
 		$offset = Dec(_SwapEndian(StringMid($AttrList, 41, 4)))
 		$List = StringMid($AttrList, $offset*2+1)
@@ -352,12 +363,12 @@ Func _DecodeAttrList($TargetFile, $AttrList)
 	$str=""
 	While StringLen($list) > $offset*2
 		$type=StringMid($List, ($offset*2)+1, 8)
-		$ALRecordLength = Dec(_SwapEndian(StringMid($List, $offset*2 + 9, 4)))
+		;$ALRecordLength = Dec(_SwapEndian(StringMid($List, $offset*2 + 9, 4)))
 		$ALNameLength = Dec(_SwapEndian(StringMid($List, $offset*2 + 13, 2)))
-		$ALNameOffset = Dec(_SwapEndian(StringMid($List, $offset*2 + 15, 2)))
-		$TestVCN = Dec(_SwapEndian(StringMid($List, $offset*2 + 17, 16)))
+		;$ALNameOffset = Dec(_SwapEndian(StringMid($List, $offset*2 + 15, 2)))
+		;$TestVCN = Dec(_SwapEndian(StringMid($List, $offset*2 + 17, 16)))
 		$ref=Dec(_SwapEndian(StringMid($List, $offset*2 + 33, 8)))
-		$LocalAttribID = "0x" & StringMid($List, $offset*2 + 49, 2) & StringMid($List, $offset*2 + 51, 2)
+		;$LocalAttribID = "0x" & StringMid($List, $offset*2 + 49, 2) & StringMid($List, $offset*2 + 51, 2)
 		If $ALNameLength > 0 Then
 			$LocalName = StringMid($List, $offset*2 + 53, $ALNameLength*2*2)
 			$LocalName = _UnicodeHexToStr($LocalName)
@@ -368,9 +379,9 @@ Func _DecodeAttrList($TargetFile, $AttrList)
 			If Not StringInStr($str, $ref) Then $str &= $ref & "-"
 		EndIf
 		If $type=$DATA Then
-			$DataInAttrlist=1
-			$IsolatedData=StringMid($List, ($offset*2)+1, $ALRecordLength*2)
-			If $TestVCN=0 Then $DataIsResident=1
+			;$DataInAttrlist=1
+			;$IsolatedData=StringMid($List, ($offset*2)+1, $ALRecordLength*2)
+			;If $TestVCN=0 Then $DataIsResident=1
 		EndIf
 		$offset += Dec(_SwapEndian(StringMid($List, $offset*2 + 9, 4)))
 	WEnd
@@ -384,33 +395,34 @@ Func _DecodeAttrList($TargetFile, $AttrList)
 EndFunc
 
 Func _StripMftRecord($MFTEntry)
+	Local $UpdSeqArrPart0, $UpdSeqArrPart1, $UpdSeqArrPart2, $RecordEnd1, $RecordEnd2
 	$UpdSeqArrOffset = Dec(_SwapEndian(StringMid($MFTEntry,11,4)))
 	$UpdSeqArrSize = Dec(_SwapEndian(StringMid($MFTEntry,15,4)))
 	$UpdSeqArr = StringMid($MFTEntry,3+($UpdSeqArrOffset*2),$UpdSeqArrSize*2*2)
 
 	If $MFT_Record_Size = 1024 Then
-		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
-		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
-		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
-		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
-		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		$UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		$UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		$UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		$RecordEnd1 = StringMid($MFTEntry,1023,4)
+		$RecordEnd2 = StringMid($MFTEntry,2047,4)
 		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 Then
 			_DebugOut("The record failed Fixup", $MFTEntry)
 			Return ""
 		EndIf
 		$MFTEntry = StringMid($MFTEntry,1,1022) & $UpdSeqArrPart1 & StringMid($MFTEntry,1027,1020) & $UpdSeqArrPart2
 	ElseIf $MFT_Record_Size = 4096 Then
-		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
-		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
-		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		$UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		$UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		$UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
 		Local $UpdSeqArrPart3 = StringMid($UpdSeqArr,13,4)
 		Local $UpdSeqArrPart4 = StringMid($UpdSeqArr,17,4)
 		Local $UpdSeqArrPart5 = StringMid($UpdSeqArr,21,4)
 		Local $UpdSeqArrPart6 = StringMid($UpdSeqArr,25,4)
 		Local $UpdSeqArrPart7 = StringMid($UpdSeqArr,29,4)
-		Local $UpdSeqArrPart8 = StringMid($UpdSeqArr,33,4)
-		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
-		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		;Local $UpdSeqArrPart8 = StringMid($UpdSeqArr,33,4)
+		$RecordEnd1 = StringMid($MFTEntry,1023,4)
+		$RecordEnd2 = StringMid($MFTEntry,2047,4)
 		Local $RecordEnd3 = StringMid($MFTEntry,3071,4)
 		Local $RecordEnd4 = StringMid($MFTEntry,4095,4)
 		Local $RecordEnd5 = StringMid($MFTEntry,5119,4)
@@ -515,7 +527,8 @@ EndFunc
 
 Func _DecodeMFTRecord($MFTEntry,$MFTMode)
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
-Local $MFTEntryOrig,$FN_Number,$DATA_Number,$SI_Number,$ATTRIBLIST_Number,$OBJID_Number,$SECURITY_Number,$VOLNAME_Number,$VOLINFO_Number,$INDEXROOT_Number,$INDEXALLOC_Number,$BITMAP_Number,$REPARSEPOINT_Number,$EAINFO_Number,$EA_Number,$PROPERTYSET_Number,$LOGGEDUTILSTREAM_Number
+Local $FN_Number,$SI_Number,$ATTRIBLIST_Number,$OBJID_Number,$SECURITY_Number,$VOLNAME_Number,$VOLINFO_Number,$INDEXROOT_Number,$INDEXALLOC_Number,$BITMAP_Number,$REPARSEPOINT_Number,$EAINFO_Number,$EA_Number,$PROPERTYSET_Number,$LOGGEDUTILSTREAM_Number
+Local $UpdSeqArrPart0, $UpdSeqArrPart1, $UpdSeqArrPart2, $RecordEnd1, $RecordEnd2
 Local $INDEX_ROOT_ON="FALSE",$INDEX_ALLOCATION_ON="FALSE",$CoreAttribute,$CoreAttributeChunk,$CoreAttributeName
 _SetArrays()
 $HEADER_RecordRealSize = ""
@@ -524,11 +537,11 @@ $UpdSeqArrOffset = Dec(_SwapEndian(StringMid($MFTEntry,11,4)))
 $UpdSeqArrSize = Dec(_SwapEndian(StringMid($MFTEntry,15,4)))
 $UpdSeqArr = StringMid($MFTEntry,3+($UpdSeqArrOffset*2),$UpdSeqArrSize*2*2)
 	If $MFT_Record_Size = 1024 Then
-		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
-		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
-		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
-		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
-		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		$UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		$UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		$UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		$RecordEnd1 = StringMid($MFTEntry,1023,4)
+		$RecordEnd2 = StringMid($MFTEntry,2047,4)
 		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 Then
 			ConsoleWrite("Error: the $MFT record is corrupt" & @CRLF)
 			ConsoleWrite(_HexEncode($MFTEntry) & @CRLF)
@@ -536,17 +549,17 @@ $UpdSeqArr = StringMid($MFTEntry,3+($UpdSeqArrOffset*2),$UpdSeqArrSize*2*2)
 		EndIf
 		$MFTEntry = StringMid($MFTEntry,1,1022) & $UpdSeqArrPart1 & StringMid($MFTEntry,1027,1020) & $UpdSeqArrPart2
 	ElseIf $MFT_Record_Size = 4096 Then
-		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
-		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
-		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		$UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		$UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		$UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
 		Local $UpdSeqArrPart3 = StringMid($UpdSeqArr,13,4)
 		Local $UpdSeqArrPart4 = StringMid($UpdSeqArr,17,4)
 		Local $UpdSeqArrPart5 = StringMid($UpdSeqArr,21,4)
 		Local $UpdSeqArrPart6 = StringMid($UpdSeqArr,25,4)
 		Local $UpdSeqArrPart7 = StringMid($UpdSeqArr,29,4)
-		Local $UpdSeqArrPart8 = StringMid($UpdSeqArr,33,4)
-		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
-		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		;Local $UpdSeqArrPart8 = StringMid($UpdSeqArr,33,4)
+		$RecordEnd1 = StringMid($MFTEntry,1023,4)
+		$RecordEnd2 = StringMid($MFTEntry,2047,4)
 		Local $RecordEnd3 = StringMid($MFTEntry,3071,4)
 		Local $RecordEnd4 = StringMid($MFTEntry,4095,4)
 		Local $RecordEnd5 = StringMid($MFTEntry,5119,4)
@@ -592,7 +605,7 @@ While 1
 				_ArrayAdd($AttribXCounter, $ATTRIBLIST_Number)
 				_ArrayAdd($AttribXStreamName, "")
 			EndIf
-			$MFTEntryOrig = $MFTEntry
+			;$MFTEntryOrig = $MFTEntry
 			$AttrList = StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2)
 			_DecodeAttrList($HEADER_MFTRecordNumber, $AttrList)		;produces $AttrQ - extra record list
 			$str = ""
@@ -667,7 +680,7 @@ While 1
 			EndIf
 		Case $AttributeType = $DATA
 ;			$DATA_ON = "TRUE"
-			$DATA_Number += 1
+			;$DATA_Number += 1
 			_ArrayAdd($DataQ, StringMid($MFTEntry,$AttributeOffset,$AttributeSize*2))
 		Case $AttributeType = $INDEX_ROOT
 ;			$INDEX_ROOT_ON = "TRUE"
@@ -707,7 +720,7 @@ While 1
 ;			_Arrayadd($HexDumpIndxRecord,$CoreIndexAllocationChunk)
 			If $CoreAttributeName = "$I30" Then
 				$INDEX_ALLOCATION_ON = "TRUE"
-				_Get_IndexAllocation($CoreAttributeChunk,$INDEXALLOC_Number,$CoreAttributeName)
+				_Get_IndexAllocation($CoreAttributeChunk)
 			EndIf
 		Case $AttributeType = $BITMAP
 ;			$BITMAP_ON = "TRUE"
@@ -889,7 +902,7 @@ Func _FindFileMFTRecord($MftRef)
 			EndIf
 		Next
 		$TryAt = $Counter-$RecordsInCurrentRun
-		$TryAtArrIndex = $i
+		;$TryAtArrIndex = $i
 		$RecordsPerCluster = $SectorsPerCluster/$RecordsDivisor
 		Do
 			$RecordJumper+=$RecordsPerCluster
@@ -978,7 +991,7 @@ EndFunc
 Func _ReadBootSector($TargetDrive)
 	Local $nbytes
 	$tBuffer=DllStructCreate("byte[512]")
-	$hFile = _WinAPI_CreateFile($TargetDrive,2,2,7)
+	Local $hFile = _WinAPI_CreateFile($TargetDrive,2,2,7)
 	If $hFile = 0 then
 		ConsoleWrite("Error in function CreateFile: " & _WinAPI_GetLastErrorMessage() & " for: " & $TargetDrive & @crlf)
 		;_DisplayInfo("Error in function CreateFile: " & _WinAPI_GetLastErrorMessage() & " for: " & "\\.\" & $TargetDrive & @crlf)
@@ -1041,7 +1054,7 @@ Func _ReadBootSector($TargetDrive)
 	$SectorsPerMftRecord = $MFT_Record_Size/$BytesPerSector
 	$ClustersPerFileRecordSegment = Ceiling($MFT_Record_Size/$BytesPerCluster)
 	If $WriteFSInfo Then
-		Local $hFile = FileOpen($OutPutPath & "\VolInfo.txt",2)
+		$hFile = FileOpen($OutPutPath & "\VolInfo.txt",2)
 		FileWriteLine($hFile,"BytesPerSector:"&$BytesPerSector)
 		FileWriteLine($hFile,"SectorsPerCluster:"&$SectorsPerCluster)
 		FileWriteLine($hFile,"SectorsPerTrack:"&$SectorsPerTrack)
@@ -1121,7 +1134,7 @@ EndFunc
 
 Func _ExtractFile($record)
 	$cBuffer = DllStructCreate("byte[" & $BytesPerCluster * 16 & "]")
-    $zflag = 0
+    ;$zflag = 0
 	If $TcpSend Then
 		$hFile = 1
 	Else
@@ -1132,15 +1145,15 @@ Func _ExtractFile($record)
 			Case UBound($RUN_VCN) = 1		;no data, do nothing
 			Case UBound($RUN_VCN) = 2 	;may be normal or sparse
 				If $RUN_VCN[1] = 0 And $IsSparse Then		;sparse
-					$FileSize = _DoSparse(1, $hFile, $DATA_InitSize)
+					_DoSparse(1, $hFile, $DATA_InitSize)
 				Else								;normal
-					$FileSize = _DoNormal(1, $hFile, $cBuffer, $DATA_InitSize)
+					_DoNormal(1, $hFile, $cBuffer, $DATA_InitSize)
 				EndIf
 		    Case Else					;may be compressed
 				_DoCompressed($hFile, $cBuffer, $record)
 		EndSelect
 		If $DATA_RealSize > $DATA_InitSize Then
-		    $FileSize = _WriteZeros($hfile, $DATA_RealSize - $DATA_InitSize)
+		    _WriteZeros($hfile, $DATA_RealSize - $DATA_InitSize)
 		EndIf
 		_WinAPI_CloseHandle($hFile)
 		Return
@@ -1151,12 +1164,12 @@ Func _ExtractFile($record)
 EndFunc
 
 Func _WriteZeros($hfile, $count)
-	Local $nBytes
+	Local $nBytes, $TcpBuff, $TcpData
 	If Not IsDllStruct($sBuffer) Then _CreateSparseBuffer()
 	While $count > $BytesPerCluster * 16
 		If $TcpSend Then
-			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($sBuffer))
-			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			$TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($sBuffer))
+			$TcpData = DllStructGetData($TcpBuff, 1)
 			TCPSend($iSocket, $TcpData)
 			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 			$TcpBuff=""
@@ -1165,12 +1178,12 @@ Func _WriteZeros($hfile, $count)
 			_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * 16, $nBytes)
 		EndIf
 		$count -= $BytesPerCluster * 16
-		$ProgressSize = $DATA_RealSize - $count
+		;$ProgressSize = $DATA_RealSize - $count
 	WEnd
 	If $count <> 0 Then
 		If $TcpSend Then
-			Local $TcpBuff = DllStructCreate("byte["&$count&"]", DllStructGetPtr($sBuffer))
-			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			$TcpBuff = DllStructCreate("byte["&$count&"]", DllStructGetPtr($sBuffer))
+			$TcpData = DllStructGetData($TcpBuff, 1)
 			TCPSend($iSocket, $TcpData)
 			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 			$TcpBuff=""
@@ -1179,15 +1192,15 @@ Func _WriteZeros($hfile, $count)
 			_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $count, $nBytes)
 		EndIf
 	EndIf
-	$ProgressSize = $DATA_RealSize
+	;$ProgressSize = $DATA_RealSize
 	Return 0
 EndFunc
 
 Func _DoCompressed($hFile, $cBuffer, $record)
-   Local $nBytes
+   Local $nBytes, $TcpBuff, $TcpData
    $r=1
    $FileSize = $DATA_InitSize
-   $ProgressSize = $FileSize
+   ;$ProgressSize = $FileSize
    Do
 	  _WinAPI_SetFilePointerEx($hDisk, $ImageOffset+$RUN_VCN[$r]*$BytesPerCluster, $FILE_BEGIN)
 	  $i = $RUN_Clusters[$r]
@@ -1207,8 +1220,8 @@ Func _DoCompressed($hFile, $cBuffer, $record)
 		 EndIf
 		 If $FileSize > $Decompressed[1] Then
 			If $TcpSend Then
-				Local $TcpBuff = DllStructCreate("byte["&$Decompressed[1]&"]", DllStructGetPtr($dBuffer))
-				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				$TcpBuff = DllStructCreate("byte["&$Decompressed[1]&"]", DllStructGetPtr($dBuffer))
+				$TcpData = DllStructGetData($TcpBuff, 1)
 				TCPSend($iSocket, $TcpData)
 				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 				$TcpBuff=""
@@ -1217,11 +1230,11 @@ Func _DoCompressed($hFile, $cBuffer, $record)
 				_WinAPI_WriteFile($hFile, DllStructGetPtr($dBuffer), $Decompressed[1], $nBytes)
 			EndIf
 			$FileSize -= $Decompressed[1]
-			$ProgressSize = $FileSize
+			;$ProgressSize = $FileSize
 		 Else
 			If $TcpSend Then
-				Local $TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($dBuffer))
-				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				$TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($dBuffer))
+				$TcpData = DllStructGetData($TcpBuff, 1)
 				TCPSend($iSocket, $TcpData)
 				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 				$TcpBuff=""
@@ -1233,33 +1246,33 @@ Func _DoCompressed($hFile, $cBuffer, $record)
 		 $r += 1
 	  ElseIf $RUN_VCN[$r]=0 Then
 		 $FileSize = _DoSparse($r, $hFile, $FileSize)
-		 $ProgressSize = 0
+		 ;$ProgressSize = 0
 	  Else
 		 $FileSize = _DoNormal($r, $hFile, $cBuffer, $FileSize)
-		 $ProgressSize = 0
+		 ;$ProgressSize = 0
 	  EndIf
 	  $r += 1
    Until $r > UBound($RUN_VCN)-2
    If $r = UBound($RUN_VCN)-1 Then
 	  If $RUN_VCN[$r]=0 Then
 		 $FileSize = _DoSparse($r, $hFile, $FileSize)
-		 $ProgressSize = 0
+		 ;$ProgressSize = 0
 	  Else
 		 $FileSize = _DoNormal($r, $hFile, $cBuffer, $FileSize)
-		 $ProgressSize = 0
+		 ;$ProgressSize = 0
 	  EndIf
    EndIf
 EndFunc
 
 Func _DoNormal($r, $hFile, $cBuffer, $FileSize)
-	Local $nBytes
+	Local $nBytes, $TcpBuff, $TcpData
 	_WinAPI_SetFilePointerEx($hDisk, $ImageOffset+$RUN_VCN[$r]*$BytesPerCluster, $FILE_BEGIN)
 	$i = $RUN_Clusters[$r]
 	While $i > 16 And $FileSize > $BytesPerCluster * 16
 		_WinAPI_ReadFile($hDisk, DllStructGetPtr($cBuffer), $BytesPerCluster * 16, $nBytes)
 		If $TcpSend Then
-			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($cBuffer))
-			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			$TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($cBuffer))
+			$TcpData = DllStructGetData($TcpBuff, 1)
 			TCPSend($iSocket, $TcpData)
 			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 			$TcpBuff=""
@@ -1269,15 +1282,15 @@ Func _DoNormal($r, $hFile, $cBuffer, $FileSize)
 		EndIf
 		$i -= 16
 		$FileSize -= $BytesPerCluster * 16
-		$ProgressSize = $FileSize
+		;$ProgressSize = $FileSize
 	WEnd
 	If $i = 0 Or $FileSize = 0 Then Return $FileSize
 	If $i > 16 Then $i = 16
 	_WinAPI_ReadFile($hDisk, DllStructGetPtr($cBuffer), $BytesPerCluster * $i, $nBytes)
 	If $FileSize > $BytesPerCluster * $i Then
 		If $TcpSend Then
-			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * $i&"]", DllStructGetPtr($cBuffer))
-			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			$TcpBuff = DllStructCreate("byte["&$BytesPerCluster * $i&"]", DllStructGetPtr($cBuffer))
+			$TcpData = DllStructGetData($TcpBuff, 1)
 			TCPSend($iSocket, $TcpData)
 			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 			$TcpBuff=""
@@ -1286,12 +1299,12 @@ Func _DoNormal($r, $hFile, $cBuffer, $FileSize)
 			_WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $BytesPerCluster * $i, $nBytes)
 		EndIf
 		$FileSize -= $BytesPerCluster * $i
-		$ProgressSize = $FileSize
+		;$ProgressSize = $FileSize
 		Return $FileSize
 	Else
 		If $TcpSend Then
-			Local $TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($cBuffer))
-			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			$TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($cBuffer))
+			$TcpData = DllStructGetData($TcpBuff, 1)
 			TCPSend($iSocket, $TcpData)
 			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 			$TcpBuff=""
@@ -1299,19 +1312,19 @@ Func _DoNormal($r, $hFile, $cBuffer, $FileSize)
 		Else
 			_WinAPI_WriteFile($hFile, DllStructGetPtr($cBuffer), $FileSize, $nBytes)
 		EndIf
-		$ProgressSize = 0
+		;$ProgressSize = 0
 		Return 0
 	EndIf
 EndFunc
 
 Func _DoSparse($r,$hFile,$FileSize)
-	Local $nBytes
+	Local $nBytes, $TcpBuff, $TcpData
 	If Not IsDllStruct($sBuffer) Then _CreateSparseBuffer()
 	$i = $RUN_Clusters[$r]
 	While $i > 16 And $FileSize > $BytesPerCluster * 16
 		If $TcpSend Then
-			Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($sBuffer))
-			Local $TcpData = DllStructGetData($TcpBuff, 1)
+			$TcpBuff = DllStructCreate("byte["&$BytesPerCluster * 16&"]", DllStructGetPtr($sBuffer))
+			$TcpData = DllStructGetData($TcpBuff, 1)
 			TCPSend($iSocket, $TcpData)
 			If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 			$TcpBuff=""
@@ -1321,13 +1334,13 @@ Func _DoSparse($r,$hFile,$FileSize)
 		EndIf
 		$i -= 16
 		$FileSize -= $BytesPerCluster * 16
-		$ProgressSize = $FileSize
+		;$ProgressSize = $FileSize
 	WEnd
 	If $i <> 0 Then
 		If $FileSize > $BytesPerCluster * $i Then
 			If $TcpSend Then
-				Local $TcpBuff = DllStructCreate("byte["&$BytesPerCluster * $i&"]", DllStructGetPtr($sBuffer))
-				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				$TcpBuff = DllStructCreate("byte["&$BytesPerCluster * $i&"]", DllStructGetPtr($sBuffer))
+				$TcpData = DllStructGetData($TcpBuff, 1)
 				TCPSend($iSocket, $TcpData)
 				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 				$TcpBuff=""
@@ -1336,11 +1349,11 @@ Func _DoSparse($r,$hFile,$FileSize)
 				_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $BytesPerCluster * $i, $nBytes)
 			EndIf
 			$FileSize -= $BytesPerCluster * $i
-			$ProgressSize = $FileSize
+			;$ProgressSize = $FileSize
 		Else
 			If $TcpSend Then
-				Local $TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($sBuffer))
-				Local $TcpData = DllStructGetData($TcpBuff, 1)
+				$TcpBuff = DllStructCreate("byte["&$FileSize&"]", DllStructGetPtr($sBuffer))
+				$TcpData = DllStructGetData($TcpBuff, 1)
 				TCPSend($iSocket, $TcpData)
 				If @Error Then ConsoleWrite("Error TCPSend: " & @error & @CRLF)
 				$TcpBuff=""
@@ -1348,7 +1361,7 @@ Func _DoSparse($r,$hFile,$FileSize)
 			Else
 				_WinAPI_WriteFile($hFile, DllStructGetPtr($sBuffer), $FileSize, $nBytes)
 			EndIf
-			$ProgressSize = 0
+			;$ProgressSize = 0
 			Return 0
 		EndIf
 	EndIf
@@ -1356,7 +1369,7 @@ Func _DoSparse($r,$hFile,$FileSize)
 EndFunc
 
 Func _CreateSparseBuffer()
-   Global $sBuffer = DllStructCreate("byte[" & $BytesPerCluster * 16 & "]")
+   $sBuffer = DllStructCreate("byte[" & $BytesPerCluster * 16 & "]")
    For $i = 1 To $BytesPerCluster * 16
 	  DllStructSetData ($sBuffer, $i, 0)
    Next
@@ -1382,7 +1395,7 @@ Func _LZNTDecompress($tInput, $Size)	;note function returns a null string if err
     Return SetError(0, 0, $tOutput)
 EndFunc
 
-Func _ExtractResidentFile($Name, $Size, $record)
+Func _ExtractResidentFile($Name, $Size)
 	Local $nBytes
 	$xBuffer = DllStructCreate("byte[" & $Size & "]")
     DllStructSetData($xBuffer, 1, '0x' & $DataRun)
@@ -1458,8 +1471,8 @@ EndFunc
 Func _GetAttributeEntry($Entry)
 	Local $CoreAttribute,$CoreAttributeTmp,$CoreAttributeArr[2]
 	Local $ATTRIBUTE_HEADER_Length,$ATTRIBUTE_HEADER_NonResidentFlag,$ATTRIBUTE_HEADER_NameLength,$ATTRIBUTE_HEADER_NameRelativeOffset,$ATTRIBUTE_HEADER_Name,$ATTRIBUTE_HEADER_Flags,$ATTRIBUTE_HEADER_AttributeID,$ATTRIBUTE_HEADER_StartVCN,$ATTRIBUTE_HEADER_LastVCN
-	Local $ATTRIBUTE_HEADER_VCNs,$ATTRIBUTE_HEADER_OffsetToDataRuns,$ATTRIBUTE_HEADER_CompressionUnitSize,$ATTRIBUTE_HEADER_Padding,$ATTRIBUTE_HEADER_AllocatedSize,$ATTRIBUTE_HEADER_RealSize,$ATTRIBUTE_HEADER_InitializedStreamSize,$RunListOffset
-	Local $ATTRIBUTE_HEADER_LengthOfAttribute,$ATTRIBUTE_HEADER_OffsetToAttribute,$ATTRIBUTE_HEADER_IndexedFlag
+	Local $ATTRIBUTE_HEADER_OffsetToDataRuns,$ATTRIBUTE_HEADER_CompressionUnitSize,$ATTRIBUTE_HEADER_Padding,$ATTRIBUTE_HEADER_AllocatedSize,$ATTRIBUTE_HEADER_RealSize,$ATTRIBUTE_HEADER_InitializedStreamSize,$RunListOffset
+	Local $ATTRIBUTE_HEADER_LengthOfAttribute,$ATTRIBUTE_HEADER_OffsetToAttribute
 	$ATTRIBUTE_HEADER_Length = StringMid($Entry,9,8)
 	$ATTRIBUTE_HEADER_Length = Dec(StringMid($ATTRIBUTE_HEADER_Length,7,2) & StringMid($ATTRIBUTE_HEADER_Length,5,2) & StringMid($ATTRIBUTE_HEADER_Length,3,2) & StringMid($ATTRIBUTE_HEADER_Length,1,2))
 	$ATTRIBUTE_HEADER_NonResidentFlag = StringMid($Entry,17,2)
@@ -1486,7 +1499,7 @@ Func _GetAttributeEntry($Entry)
 			$Flags &= "COMPRESSED+"
 		EndIf
 		If BitAND($ATTRIBUTE_HEADER_Flags,"4000") Then
-			$IsEncrypted = 1
+			;$IsEncrypted = 1
 			$Flags &= "ENCRYPTED+"
 		EndIf
 		If BitAND($ATTRIBUTE_HEADER_Flags,"8000") Then
@@ -1507,7 +1520,7 @@ Func _GetAttributeEntry($Entry)
 ;		ConsoleWrite("$ATTRIBUTE_HEADER_LastVCN = " & $ATTRIBUTE_HEADER_LastVCN & @crlf)
 		$ATTRIBUTE_HEADER_LastVCN = Dec(_SwapEndian($ATTRIBUTE_HEADER_LastVCN),2)
 ;		ConsoleWrite("$ATTRIBUTE_HEADER_LastVCN = " & $ATTRIBUTE_HEADER_LastVCN & @crlf)
-		$ATTRIBUTE_HEADER_VCNs = $ATTRIBUTE_HEADER_LastVCN - $ATTRIBUTE_HEADER_StartVCN
+		;$ATTRIBUTE_HEADER_VCNs = $ATTRIBUTE_HEADER_LastVCN - $ATTRIBUTE_HEADER_StartVCN
 ;		ConsoleWrite("$ATTRIBUTE_HEADER_VCNs = " & $ATTRIBUTE_HEADER_VCNs & @crlf)
 		$ATTRIBUTE_HEADER_OffsetToDataRuns = StringMid($Entry,65,4)
 		$ATTRIBUTE_HEADER_OffsetToDataRuns = Dec(StringMid($ATTRIBUTE_HEADER_OffsetToDataRuns,3,1) & StringMid($ATTRIBUTE_HEADER_OffsetToDataRuns,3,1))
@@ -1548,7 +1561,7 @@ Func _GetAttributeEntry($Entry)
 ;		$ATTRIBUTE_HEADER_OffsetToAttribute = Dec(StringMid($ATTRIBUTE_HEADER_OffsetToAttribute,3,2) & StringMid($ATTRIBUTE_HEADER_OffsetToAttribute,1,2))
 		$ATTRIBUTE_HEADER_OffsetToAttribute = Dec(_SwapEndian(StringMid($Entry,41,4)))
 ;		ConsoleWrite("$ATTRIBUTE_HEADER_OffsetToAttribute = " & $ATTRIBUTE_HEADER_OffsetToAttribute & @crlf)
-		$ATTRIBUTE_HEADER_IndexedFlag = Dec(StringMid($Entry,45,2))
+		;$ATTRIBUTE_HEADER_IndexedFlag = Dec(StringMid($Entry,45,2))
 		$ATTRIBUTE_HEADER_Padding = StringMid($Entry,47,2)
 		$DataRun = StringMid($Entry,$ATTRIBUTE_HEADER_OffsetToAttribute*2+1,$ATTRIBUTE_HEADER_LengthOfAttribute*2)
 ;		ConsoleWrite("$DataRun = " & $DataRun & @crlf)
@@ -1683,7 +1696,7 @@ Func _GetAttributeEntry($Entry)
 EndFunc
 
 Func _Get_IndexRoot($Entry,$Current_Attrib_Number,$CurrentAttributeName)
-	Local $LocalAttributeOffset = 1,$AttributeType,$CollationRule,$SizeOfIndexAllocationEntry,$ClustersPerIndexRoot,$IRPadding
+	Local $LocalAttributeOffset = 1,$AttributeType,$CollationRule,$SizeOfIndexAllocationEntry,$ClustersPerIndexRoot
 	$AttributeType = StringMid($Entry,$LocalAttributeOffset,8)
 ;	$AttributeType = _SwapEndian($AttributeType)
 	$CollationRule = StringMid($Entry,$LocalAttributeOffset+8,8)
@@ -1722,13 +1735,13 @@ Func _Get_IndexRoot($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 ;	If $ResidentIndx And $AttributeType=$FILE_NAME Then
 	If $AttributeType=$FILE_NAME Then
 		$TheResidentIndexEntry = StringMid($Entry,$LocalAttributeOffset+64,($TotalSizeOfEntries*2)-64)
-		_DecodeIndxEntries($TheResidentIndexEntry,$Current_Attrib_Number,$CurrentAttributeName)
+		_DecodeIndxEntries($TheResidentIndexEntry)
 	EndIf
 EndFunc
 
 Func _StripIndxRecord($Entry)
 ;	ConsoleWrite("Starting function _StripIndxRecord()" & @crlf)
-	Local $LocalAttributeOffset = 1,$IndxHdrUpdateSeqArrOffset,$IndxHdrUpdateSeqArrSize,$IndxHdrUpdSeqArr,$IndxHdrUpdSeqArrPart0,$IndxHdrUpdSeqArrPart1,$IndxHdrUpdSeqArrPart2,$IndxHdrUpdSeqArrPart3,$IndxHdrUpdSeqArrPart4,$IndxHdrUpdSeqArrPart5,$IndxHdrUpdSeqArrPart6,$IndxHdrUpdSeqArrPart7,$IndxHdrUpdSeqArrPart8
+	Local $LocalAttributeOffset = 1,$IndxHdrUpdateSeqArrOffset,$IndxHdrUpdateSeqArrSize,$IndxHdrUpdSeqArr,$IndxHdrUpdSeqArrPart0,$IndxHdrUpdSeqArrPart1,$IndxHdrUpdSeqArrPart2,$IndxHdrUpdSeqArrPart3,$IndxHdrUpdSeqArrPart4,$IndxHdrUpdSeqArrPart5,$IndxHdrUpdSeqArrPart6,$IndxHdrUpdSeqArrPart7
 	Local $IndxRecordEnd1,$IndxRecordEnd2,$IndxRecordEnd3,$IndxRecordEnd4,$IndxRecordEnd5,$IndxRecordEnd6,$IndxRecordEnd7,$IndxRecordEnd8,$IndxRecordSize,$IndxHeaderSize,$IsNotLeafNode
 ;	ConsoleWrite("Unfixed INDX record:" & @crlf)
 ;	ConsoleWrite(_HexEncode("0x"&$Entry) & @crlf)
@@ -1747,7 +1760,7 @@ Func _StripIndxRecord($Entry)
 	$IndxHdrUpdSeqArrPart5 = StringMid($IndxHdrUpdSeqArr,21,4)
 	$IndxHdrUpdSeqArrPart6 = StringMid($IndxHdrUpdSeqArr,25,4)
 	$IndxHdrUpdSeqArrPart7 = StringMid($IndxHdrUpdSeqArr,29,4)
-	$IndxHdrUpdSeqArrPart8 = StringMid($IndxHdrUpdSeqArr,33,4)
+	;$IndxHdrUpdSeqArrPart8 = StringMid($IndxHdrUpdSeqArr,33,4)
 	$IndxRecordEnd1 = StringMid($Entry,1021,4)
 	$IndxRecordEnd2 = StringMid($Entry,2045,4)
 	$IndxRecordEnd3 = StringMid($Entry,3069,4)
@@ -1775,7 +1788,7 @@ Func _StripIndxRecord($Entry)
 	Return $Entry
 EndFunc
 
-Func _Get_IndexAllocation($Entry,$Current_Attrib_Number,$CurrentAttributeName)
+Func _Get_IndexAllocation($Entry)
 ;	ConsoleWrite("Starting function _Get_IndexAllocation()" & @crlf)
 	Local $NextPosition = 1,$IndxHdrMagic,$IndxEntries,$TotalIndxEntries
 ;	ConsoleWrite("StringLen of chunk = " & StringLen($Entry) & @crlf)
@@ -1800,15 +1813,15 @@ Func _Get_IndexAllocation($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 ;	ConsoleWrite(_HexEncode("0x"& StringMid($Entry,1)) & @crlf)
 ;	ConsoleWrite("Total chunk of stripped INDX entries:" & @crlf)
 ;	ConsoleWrite(_HexEncode("0x"& StringMid($TotalIndxEntries,1)) & @crlf)
-	_DecodeIndxEntries($TotalIndxEntries,$Current_Attrib_Number,$CurrentAttributeName)
+	_DecodeIndxEntries($TotalIndxEntries)
 EndFunc
 
-Func _DecodeIndxEntries($Entry,$Current_Attrib_Number,$CurrentAttributeName)
+Func _DecodeIndxEntries($Entry)
 ;	ConsoleWrite("Starting function _DecodeIndxEntries()" & @crlf)
-	Local $LocalAttributeOffset = 1,$NewLocalAttributeOffset,$IndxHdrMagic,$IndxHdrUpdateSeqArrOffset,$IndxHdrUpdateSeqArrSize,$IndxHdrLogFileSequenceNo,$IndxHdrVCNOfIndx,$IndxHdrOffsetToIndexEntries,$IndxHdrSizeOfIndexEntries,$IndxHdrAllocatedSizeOfIndexEntries
-	Local $IndxHdrFlag,$IndxHdrPadding,$IndxHdrUpdateSequence,$IndxHdrUpdSeqArr,$IndxHdrUpdSeqArrPart0,$IndxHdrUpdSeqArrPart1,$IndxHdrUpdSeqArrPart2,$IndxHdrUpdSeqArrPart3,$IndxRecordEnd4,$IndxRecordEnd1,$IndxRecordEnd2,$IndxRecordEnd3,$IndxRecordEnd4
-	Local $FileReference,$IndexEntryLength,$StreamLength,$Flags,$Stream,$SubNodeVCN,$tmp0=0,$tmp1=0,$tmp2=0,$tmp3=0,$EntryCounter=1,$Padding2,$EntryCounter=UBound($IndxFileNameArr)
-	$NewLocalAttributeOffset = 1
+	;Local $LocalAttributeOffset = 1,$NewLocalAttributeOffset,$IndxHdrMagic,$IndxHdrUpdateSeqArrOffset,$IndxHdrUpdateSeqArrSize,$IndxHdrLogFileSequenceNo,$IndxHdrVCNOfIndx,$IndxHdrOffsetToIndexEntries,$IndxHdrSizeOfIndexEntries,$IndxHdrAllocatedSizeOfIndexEntries
+	;Local $IndxHdrFlag,$IndxHdrPadding,$IndxHdrUpdateSequence,$IndxHdrUpdSeqArr,$IndxHdrUpdSeqArrPart0,$IndxHdrUpdSeqArrPart1,$IndxHdrUpdSeqArrPart2,$IndxHdrUpdSeqArrPart3,$IndxRecordEnd4,$IndxRecordEnd1,$IndxRecordEnd2,$IndxRecordEnd3,$IndxRecordEnd4
+	Local $IndexEntryLength,$SubNodeVCN,$tmp0=0,$tmp1=0,$tmp2=0,$tmp3=0,$EntryCounter=UBound($IndxFileNameArr)
+	Local $NewLocalAttributeOffset = 1
 	$MFTReference = StringMid($Entry,$NewLocalAttributeOffset,12)
 	$MFTReference = StringMid($MFTReference,7,2)&StringMid($MFTReference,5,2)&StringMid($MFTReference,3,2)&StringMid($MFTReference,1,2)
 	$MFTReference = Dec($MFTReference)
@@ -2005,7 +2018,7 @@ Func _DecodeIndxEntries($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 ;		ConsoleWrite("$OffsetToFileName = " & $OffsetToFileName & @crlf)
 		$IndexFlags = StringMid($Entry,$NextEntryOffset+24,4)
 ;		ConsoleWrite("$IndexFlags = " & $IndexFlags & @crlf)
-		$Padding = StringMid($Entry,$NextEntryOffset+28,4)
+		;$Padding = StringMid($Entry,$NextEntryOffset+28,4)
 ;		ConsoleWrite("$Padding = " & $Padding & @crlf)
 		$MFTReferenceOfParent = StringMid($Entry,$NextEntryOffset+32,12)
 ;		ConsoleWrite("$MFTReferenceOfParent = " & $MFTReferenceOfParent & @crlf)
@@ -2090,7 +2103,7 @@ Func _DecodeIndxEntries($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 		Until IsInt($tmp2)
 		$PaddingLength = $tmp3
 ;		ConsoleWrite("$PaddingLength = " & $PaddingLength & @crlf)
-		$Padding = StringMid($Entry,$NextEntryOffset+164+($Indx_NameLength*2*2),$PaddingLength)
+		;$Padding = StringMid($Entry,$NextEntryOffset+164+($Indx_NameLength*2*2),$PaddingLength)
 ;		ConsoleWrite("$Padding = " & $Padding & @crlf)
 		If $IndexFlags <> "0000" Then
 			$SubNodeVCN = StringMid($Entry,$NextEntryOffset+164+($Indx_NameLength*2*2)+$PaddingLength,16)
@@ -2335,8 +2348,8 @@ Func _DecodeNameQ($NameQ)
 	For $name = 1 To UBound($NameQ) - 1
 		$NameString = $NameQ[$name]
 		If $NameString = "" Then ContinueLoop
-		$FN_AllocSize = Dec(_SwapEndian(StringMid($NameString,129,16)),2)
-		$FN_RealSize = Dec(_SwapEndian(StringMid($NameString,145,16)),2)
+		;$FN_AllocSize = Dec(_SwapEndian(StringMid($NameString,129,16)),2)
+		;$FN_RealSize = Dec(_SwapEndian(StringMid($NameString,145,16)),2)
 		$FN_NameLength = Dec(StringMid($NameString,177,2))
 		$FN_NameSpace = StringMid($NameString,179,2)
 		Select
@@ -2353,7 +2366,7 @@ Func _DecodeNameQ($NameQ)
 		EndSelect
 		$FN_FileName = StringMid($NameString,181,$FN_NameLength*4)
 		$FN_FileName = _UnicodeHexToStr($FN_FileName)
-		If StringLen($FN_FileName) <> $FN_NameLength Then $INVALID_FILENAME = 1
+		;If StringLen($FN_FileName) <> $FN_NameLength Then $INVALID_FILENAME = 1
 	Next
 	Return
 EndFunc
@@ -2443,7 +2456,7 @@ Func _GetAttrListMFTRecord($Pos)
 EndFunc
 
 Func _DecodeAttrList2($FileRef, $AttrList)
-   Local $offset, $length, $nBytes, $List = "", $str = ""
+   Local $offset, $nBytes, $List = "", $str = ""
    If StringMid($AttrList, 17, 2) = "00" Then		;attribute list is resident in AttrList
 	  $offset = Dec(_SwapEndian(StringMid($AttrList, 41, 4)))
 	  $List = StringMid($AttrList, $offset*2+1)		;gets list when resident
@@ -2478,10 +2491,10 @@ Func _DecodeAttrList2($FileRef, $AttrList)
 EndFunc
 
 Func _GenRefArray()
-	Local $nBytes, $ParentRef, $FileRef, $BaseRef, $tag, $PrintName, $record, $TmpRecord, $MFTClustersToKeep=0, $DoKeepCluster=0, $Subtr, $PartOfAttrList=0, $ArrSize, $BytesToGet=0
+	Local $nBytes, $MFTClustersToKeep=0, $DoKeepCluster=0, $Subtr, $ArrSize, $BytesToGet=0
 	Local $rBuffer = DllStructCreate("byte["&$MFT_Record_Size&"]")
 	$ref = -1
-	$begin = TimerInit()
+	;$begin = TimerInit()
 	For $r = 1 To Ubound($MFT_RUN_VCN)-1
 ;		ConsoleWrite("$r: " & $r & @CRLF)
 		$DoKeepCluster=$MFTClustersToKeep
@@ -2503,7 +2516,7 @@ Func _GenRefArray()
 				If $i >= $EndOfRun-(($ClustersPerFileRecordSegment-$MFTClustersToKeep)*$BytesPerCluster) Then
 					$BytesToGet = ($ClustersPerFileRecordSegment-$MFTClustersToKeep)*$BytesPerCluster
 					_WinAPI_ReadFile($hDisk, DllStructGetPtr($rBuffer), $BytesToGet, $nBytes)
-					$TmpRecord = StringMid(DllStructGetData($rBuffer, 1),1, 2+($BytesToGet*2))
+					;$TmpRecord = StringMid(DllStructGetData($rBuffer, 1),1, 2+($BytesToGet*2))
 					$ArrSize = UBound($SplitMftRecArr)
 					ReDim $SplitMftRecArr[$ArrSize+1]
 					$SplitMftRecArr[$ArrSize] = $ref+1 & '?' & ($Pos + $i) & ',' & $BytesToGet
@@ -2512,15 +2525,15 @@ Func _GenRefArray()
 			EndIf
 			$ref += 1
 			If $i = 0 And $DoKeepCluster Then
-				If $TmpRecord <> "" Then $record = $TmpRecord
+				;If $TmpRecord <> "" Then $record = $TmpRecord
 				$BytesToGet = $DoKeepCluster*$BytesPerCluster
 				if $BytesToGet > $MFT_Record_Size Then
 					MsgBox(0,"Error","$BytesToGet > $MFT_Record_Size")
 					$BytesToGet = $MFT_Record_Size
 				EndIf
 				_WinAPI_ReadFile($hDisk, DllStructGetPtr($rBuffer), $BytesToGet, $nBytes)
-				$record &= StringMid(DllStructGetData($rBuffer, 1),3, $BytesToGet*2)
-				$TmpRecord=""
+				;$record &= StringMid(DllStructGetData($rBuffer, 1),3, $BytesToGet*2)
+				;$TmpRecord=""
 				$SplitMftRecArr[$ArrSize] &= '|' & ($Pos + $i) & ',' & $BytesToGet
 			EndIf
 		Next
@@ -3091,22 +3104,19 @@ Func _ParseIndex($TestName)
 		For $j = 1 To Ubound($IndxFileNameArr)-1
 			If $IndxFileNameArr[$j] = $TestName Then
 				Return $IndxMFTReferenceArr[$j]
-			Else
-;				Return SetError(1,0,0)
 			EndIf
 		Next
 	ElseIf $AttributesArr[9][2] = "TRUE" Then ;And $ResidentIndx Then ; $INDEX_ROOT
 		For $j = 1 To Ubound($IndxFileNameArr)-1
 			If $IndxFileNameArr[$j] = $TestName Then
 				Return $IndxMFTReferenceArr[$j]
-			Else
-;				Return SetError(1,0,0)
 			EndIf
 		Next
 	Else
 ;		ConsoleWrite("Error: No index found for: " & $TestName & @CRLF)
 		Return SetError(1,0,0)
 	EndIf
+	Return SetError(1,0,0)
 EndFunc
 
 Func _AlignString($input,$length)
